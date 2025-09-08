@@ -29,8 +29,8 @@ def get_greeting(lang: str) -> str:
 
 # Конфигурация
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-# Use the currently available small GPT-5 model by default
-REALTIME_MODEL = os.getenv("REALTIME_MODEL", "gpt-5-mini")
+# Валидная Realtime‑модель по умолчанию (можно переопределить через ENV)
+REALTIME_MODEL = os.getenv("REALTIME_MODEL", "gpt-4o-realtime-preview-2024-12-17")
 REALTIME_WS_URL = "wss://api.openai.com/v1/realtime"
 
 

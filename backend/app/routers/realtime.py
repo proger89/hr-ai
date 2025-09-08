@@ -365,7 +365,7 @@ async def proxy_openai_to_client(
                 item = data.get("item", {})
                 session.conversation_items.append(item)
             
-            # Отслеживаем прогресс через question_asked
+            # Отслеживаем прогресс через question_asked (антидребезг: только один раз за ответ и +1 шаг)
             if data.get("type") == "response.function_call":
                 fn = data.get("function", {}).get("name")
                 args_raw = data.get("function", {}).get("arguments", "{}")
@@ -374,31 +374,33 @@ async def proxy_openai_to_client(
                 except Exception:
                     args = {}
                 if fn == "question_asked":
-                    session.context["question_marked"] = True
-                    try:
-                        idx = int(args.get("index") or (session.current_question + 1))
-                    except Exception:
+                    if session.context.get("question_marked"):
+                        # игнорируем повторные вызовы в рамках текущего ответа
+                        pass
+                    else:
+                        session.context["question_marked"] = True
+                        # Не доверяем индексу из модели: продвигаем строго на +1
                         idx = session.current_question + 1
-                    idx = max(1, min(idx, session.total_questions))
-                    if idx > session.current_question:
-                        session.current_question = idx
-                        await client_ws.send_json({
-                            "type": "progress.update",
-                            "current": session.current_question,
-                            "total": session.total_questions
-                        })
-                    # Авто‑финиш: если достигли лимита — заставляем модель вызвать end_interview
-                    if session.current_question >= session.total_questions and not session.context.get("interview_completed"):
-                        await openai_ws.send(json.dumps({
-                            "type": "response.create",
-                            "response": {
-                                "modalities": ["audio", "text"],
-                                "instructions": (
-                                    "Call the tool `end_interview` NOW with your final overall_score, strengths, weaknesses, "
-                                    "and recommendation (hire/maybe/reject). Then say a brief closing line. Do not ask new questions."
-                                )
-                            }
-                        }))
+                        idx = max(1, min(idx, session.total_questions))
+                        if idx > session.current_question:
+                            session.current_question = idx
+                            await client_ws.send_json({
+                                "type": "progress.update",
+                                "current": session.current_question,
+                                "total": session.total_questions
+                            })
+                        # Авто‑финиш: если достигли лимита — заставляем модель вызвать end_interview
+                        if session.current_question >= session.total_questions and not session.context.get("interview_completed"):
+                            await openai_ws.send(json.dumps({
+                                "type": "response.create",
+                                "response": {
+                                    "modalities": ["audio", "text"],
+                                    "instructions": (
+                                        "Call the tool `end_interview` NOW with your final overall_score, strengths, weaknesses, "
+                                        "and recommendation (hire/maybe/reject). Then say a brief closing line. Do not ask new questions."
+                                    )
+                                }
+                            }))
 
             # Фолбэк удалён: прогресс обновляется только при вызове question_asked
 
