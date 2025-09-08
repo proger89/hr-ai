@@ -346,27 +346,26 @@
           
           // Подключаемся к WebSocket
           const urlLang = new URLSearchParams(location.search).get('lang');
-          lang = urlLang || localStorage.getItem('uiLang') || ((navigator.language||'ru').startsWith('ru') ? 'ru' : 'en');
+          lang = urlLang || localStorage.getItem('uiLang') || ((navigator.language || 'ru').startsWith('ru') ? 'ru' : 'en');
           lang = (lang || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en';
           const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/realtime/ws/${candidateId}?lang=${lang}&ui=${lang}`;
           ws = new WebSocket(wsUrl);
 
           ws.onopen = () => {
-            console.log('WS connected');
+            console.log('WebSocket connected');
             setConnectionStatus('connected', lang === 'ru' ? 'Подключено' : 'Connected');
             statusText.textContent = lang === 'ru' ? 'Готов к интервью' : 'Ready for interview';
 
             // Начинаем захват аудио
             startAudioCapture();
 
-            // Отправляем приветственное событие
+            // Отправляем приветственное событие, чтобы сервер знал о клиенте
             sendClientEvent({ type: 'session.handshake' });
 
             // Если сервер не инициировал беседу, подстрахуемся на клиенте
             setTimeout(() => {
               if (!kickoffSent && ws && ws.readyState === WebSocket.OPEN) {
-                const short = lang;
-                const instr = short === 'ru'
+                const instr = lang === 'ru'
                   ? 'Поздоровайся кратко по‑русски и сразу задай первый вопрос: Расскажите, пожалуйста, о себе.'
                   : 'Greet briefly in English and immediately ask the first question: Please tell me about yourself.';
                 sendClientEvent({
