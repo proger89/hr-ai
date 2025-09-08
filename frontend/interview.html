@@ -352,12 +352,15 @@
           ws = new WebSocket(wsUrl);
 
           ws.onopen = () => {
-            console.log('WebSocket connected');
-            setConnectionStatus('connected', 'Подключено');
-            statusText.textContent = 'Готов к интервью';
+            console.log('WS connected');
+            setConnectionStatus('connected', lang === 'ru' ? 'Подключено' : 'Connected');
+            statusText.textContent = lang === 'ru' ? 'Готов к интервью' : 'Ready for interview';
 
             // Начинаем захват аудио
             startAudioCapture();
+
+            // Отправляем приветственное событие
+            sendClientEvent({ type: 'session.handshake' });
 
             // Если сервер не инициировал беседу, подстрахуемся на клиенте
             setTimeout(() => {
