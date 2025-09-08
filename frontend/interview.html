@@ -324,8 +324,10 @@
       let inputGain = null;
       let mediaStream = null;
       let audioQueue = [];
+      let currentSource = null;
       let isPlaying = false;
       let kickoffSent = false;
+      let kickoffTimer = null;
       let lang = 'ru';
       
       // ====== WebSocket и Realtime API ======
@@ -361,7 +363,7 @@
             startAudioCapture();
 
             // Если сервер не инициировал беседу, подстрахуемся на клиенте
-            setTimeout(() => {
+            kickoffTimer = setTimeout(() => {
               if (!kickoffSent && ws && ws.readyState === WebSocket.OPEN) {
                 const instr = lang === 'ru'
                   ? 'Поздоровайся кратко по‑русски и сразу задай первый вопрос: Расскажите, пожалуйста, о себе.'
@@ -372,7 +374,7 @@
                 });
                 kickoffSent = true;
               }
-            }, 500);
+            }, 1500);
           };
           
           ws.onmessage = async (event) => {
@@ -401,28 +403,20 @@
       
       // ====== Обработка событий от сервера ======
       async function handleServerEvent(event) {
-        // Убираем лишний вывод в консоль
-        // console.log('Server event:', event.type);
-        
+        // Отслеживаем первый ответ модели, чтобы не запускать fallback повторно
+        if (event.type && event.type.startsWith('response.')) {
+          kickoffSent = true;
+          if (kickoffTimer) {
+            clearTimeout(kickoffTimer);
+            kickoffTimer = null;
+          }
+        }
+
         switch (event.type) {
           case 'session.created':
             sessionId = event.session.id;
             totalQuestions = event.session.total_questions || 5;
             progressText.textContent = `0 из ${totalQuestions} вопросов`;
-            // Подстраховка: если модель не заговорила в течение 1.5s — отправим kickoff
-            setTimeout(() => {
-              if (!kickoffSent && !isPlaying && ws && ws.readyState === WebSocket.OPEN) {
-                const short = lang;
-                const instr = short === 'ru'
-                  ? 'Поздоровайся кратко по‑русски и сразу задай первый вопрос: Расскажите, пожалуйста, о себе.'
-                  : "Greet briefly in English and immediately ask the first question: Please tell me about yourself.";
-                sendClientEvent({
-                  type: 'response.create',
-                  response: { modalities: ['audio','text'], instructions: instr }
-                });
-                kickoffSent = true;
-              }
-            }, 1500);
             break;
             
           case 'session.updated':
@@ -432,26 +426,24 @@
           case 'input_audio_buffer.speech_started':
             isListening = true;
             micIndicator.classList.add('active');
-            // barge-in: отменяем ТОЛЬКО если сейчас проигрывается ответ ИИ
+            // barge-in: при начале речи пользователя отменяем ответ ИИ
             if (isPlaying) {
               sendClientEvent({ type: 'response.cancel' });
+              audioQueue = [];
+              if (currentSource) {
+                try { currentSource.stop(); } catch (e) {}
+                currentSource = null;
+              }
+              isPlaying = false;
+              setWaveLevel(0);
             }
             break;
             
           case 'input_audio_buffer.speech_stopped':
             isListening = false;
             micIndicator.classList.remove('active');
-            // После окончания речи инициируем ответ модели
+            // После окончания речи инициируем обработку
             sendClientEvent({ type: 'input_audio_buffer.commit' });
-            sendClientEvent({
-              type: 'response.create',
-              response: {
-                modalities: ['audio','text'],
-                instructions: lang === 'ru'
-                  ? 'Продолжай интервью по‑русски.'
-                  : 'Continue the interview in English.'
-              }
-            });
             break;
             
           case 'response.audio.delta':
@@ -600,35 +592,31 @@
         if (audioQueue.length === 0) {
           isPlaying = false;
           setWaveLevel(0);
+          currentSource = null;
           return;
         }
-        
+
         isPlaying = true;
         setWaveLevel(0.8);
-        
+
         const next = audioQueue.shift();
         const arrayBuffer = next instanceof ArrayBuffer ? next : base64ToArrayBuffer(next);
         const audioBuffer = await pcm16ToAudioBuffer(arrayBuffer);
-        
-        const source = audioContext.createBufferSource();
-        source.buffer = audioBuffer;
-        source.onended = () => {
+
+        currentSource = audioContext.createBufferSource();
+        currentSource.buffer = audioBuffer;
+        currentSource.onended = () => {
+          currentSource = null;
           playNextChunk();
         };
-        
-        source.connect(audioContext.destination);
-        source.start();
+
+        currentSource.connect(audioContext.destination);
+        currentSource.start();
       }
       
       // ====== Утилиты для работы с аудио ======
-      let lastCommit = 0;
       function sendAppend(base64){
         sendClientEvent({ type:'input_audio_buffer.append', audio: base64 });
-        const now = performance.now();
-        if (now - lastCommit > 250){
-          sendClientEvent({ type:'input_audio_buffer.commit' });
-          lastCommit = now;
-        }
       }
 
       function downsampleFloat32(buffer, inRate, outRate){

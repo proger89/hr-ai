@@ -169,8 +169,8 @@ def create_session_config(
                 "turn_detection": {
                     "type": "semantic_vad",
                     "create_response": True,
-                    "threshold": 0.5,
-                    "silence_duration_ms": 700
+                    "threshold": 0.6,
+                    "silence_duration_ms": 1000
                 }
             },
             "output": {
