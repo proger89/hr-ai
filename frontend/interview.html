@@ -443,6 +443,17 @@
           case 'input_audio_buffer.speech_stopped':
             isListening = false;
             micIndicator.classList.remove('active');
+            // После окончания речи инициируем ответ модели
+            sendClientEvent({ type: 'input_audio_buffer.commit' });
+            sendClientEvent({
+              type: 'response.create',
+              response: {
+                modalities: ['audio'],
+                instructions: lang === 'ru'
+                  ? 'Продолжай интервью по‑русски.'
+                  : 'Continue the interview in English.'
+              }
+            });
             break;
             
           case 'response.audio.delta':
