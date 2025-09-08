@@ -329,10 +329,14 @@ async def proxy_openai_to_client(
     try:
         async for message in openai_ws:
             data = json.loads(message)
-            
+
             # Логируем для отладки
             logger.debug(f"OpenAI -> Client: {data.get('type')}")
-            
+
+            # Сбрасываем флаг прогресса при начале нового ответа
+            if data.get("type") == "response.created":
+                session.context["question_marked"] = False
+
             # Обрабатываем специальные события
             if data.get("type") == "response.function_call":
                 # Обрабатываем вызов функции
@@ -361,7 +365,7 @@ async def proxy_openai_to_client(
                 item = data.get("item", {})
                 session.conversation_items.append(item)
             
-            # Отслеживаем прогресс только через question_asked
+            # Отслеживаем прогресс через question_asked
             if data.get("type") == "response.function_call":
                 fn = data.get("function", {}).get("name")
                 args_raw = data.get("function", {}).get("arguments", "{}")
@@ -370,6 +374,7 @@ async def proxy_openai_to_client(
                 except Exception:
                     args = {}
                 if fn == "question_asked":
+                    session.context["question_marked"] = True
                     try:
                         idx = int(args.get("index") or (session.current_question + 1))
                     except Exception:
@@ -393,7 +398,29 @@ async def proxy_openai_to_client(
                                 )
                             }
                         }))
-            
+
+            # Фолбэк: если модель задала вопрос, но не вызвала question_asked
+            if data.get("type") == "response.done" and not session.context.get("interview_completed"):
+                if not session.context.get("question_marked"):
+                    session.current_question += 1
+                    session.context["question_marked"] = True
+                    await client_ws.send_json({
+                        "type": "progress.update",
+                        "current": session.current_question,
+                        "total": session.total_questions
+                    })
+                    if session.current_question >= session.total_questions:
+                        await openai_ws.send(json.dumps({
+                            "type": "response.create",
+                            "response": {
+                                "modalities": ["audio", "text"],
+                                "instructions": (
+                                    "Call the tool `end_interview` NOW with your final overall_score, strengths, weaknesses, "
+                                    "and recommendation (hire/maybe/reject). Then say a brief closing line. Do not ask new questions."
+                                )
+                            }
+                        }))
+
             # Пересылаем клиенту
             await client_ws.send_json(data)
             
