@@ -321,6 +321,7 @@
       let isListening = false;
       let audioContext = null;
       let audioProcessor = null;
+      let inputGain = null;
       let mediaStream = null;
       let audioQueue = [];
       let isPlaying = false;
@@ -518,23 +519,45 @@
         
         const source = audioContext.createMediaStreamSource(mediaStream);
         audioProcessor = audioContext.createScriptProcessor(2048, 1, 1);
-        
+
         audioProcessor.onaudioprocess = (e) => {
           const inputData = e.inputBuffer.getChannelData(0);
+
+          // Плавная визуализация уровня голоса
+          let sum = 0;
+          for (let i = 0; i < inputData.length; i++) {
+            sum += inputData[i] * inputData[i];
+          }
+          const rms = Math.sqrt(sum / inputData.length);
+          setWaveLevel(rms);
+          if (rms > 0.01) {
+            micIndicator.classList.add('active');
+          } else if (!isListening) {
+            micIndicator.classList.remove('active');
+          }
+
           const ds = downsampleFloat32(inputData, audioContext.sampleRate, 24000);
           const pcm16 = floatTo16BitPCM(ds);
           const base64 = arrayBufferToBase64(pcm16);
           sendAppend(base64);
         };
-        
+
         source.connect(audioProcessor);
-        // не подключаем processor к destination, чтобы не ловить локальное эхо
+        // Подключаем к нулевому gain, чтобы processor работал без эха
+        inputGain = audioContext.createGain();
+        inputGain.gain.value = 0;
+        audioProcessor.connect(inputGain);
+        inputGain.connect(audioContext.destination);
       }
-      
+
       function stopAudioCapture() {
         if (audioProcessor) {
           audioProcessor.disconnect();
           audioProcessor = null;
+        }
+        if (inputGain) {
+          inputGain.disconnect();
+          inputGain = null;
         }
         if (mediaStream) {
           mediaStream.getTracks().forEach(track => track.stop());
