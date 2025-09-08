@@ -359,9 +359,6 @@
             // Начинаем захват аудио
             startAudioCapture();
 
-            // Отправляем приветственное событие, чтобы сервер знал о клиенте
-            sendClientEvent({ type: 'session.handshake' });
-
             // Если сервер не инициировал беседу, подстрахуемся на клиенте
             setTimeout(() => {
               if (!kickoffSent && ws && ws.readyState === WebSocket.OPEN) {

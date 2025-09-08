@@ -159,8 +159,16 @@ async def realtime_websocket(
             open_timeout=30  # Увеличиваем таймаут до 30 секунд
         )
         logger.info("Successfully connected to OpenAI Realtime API")
-        
-        # Отправляем session.created клиенту
+
+        # Выполняем обязательный handshake с OpenAI, чтобы активировать сессию
+        try:
+            await openai_ws.send(json.dumps({"type": "session.create"}))
+            await openai_ws.recv()  # ждём подтверждения session.created
+        except Exception as e:
+            logger.error(f"OpenAI handshake failed: {e}")
+            raise
+
+        # Уведомляем браузер о создании сессии только после успешного handshake
         await websocket.send_json({
             "type": "session.created",
             "session": {
