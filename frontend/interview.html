@@ -367,7 +367,7 @@
                   : 'Greet briefly in English and immediately ask the first question: Please tell me about yourself.';
                 sendClientEvent({
                   type: 'response.create',
-                  response: { modalities: ['audio'], instructions: instr }
+                  response: { modalities: ['audio','text'], instructions: instr }
                 });
                 kickoffSent = true;
               }
@@ -417,7 +417,7 @@
                   : "Greet briefly in English and immediately ask the first question: Please tell me about yourself.";
                 sendClientEvent({
                   type: 'response.create',
-                  response: { modalities: ['audio'], instructions: instr }
+                  response: { modalities: ['audio','text'], instructions: instr }
                 });
                 kickoffSent = true;
               }
@@ -445,7 +445,7 @@
             sendClientEvent({
               type: 'response.create',
               response: {
-                modalities: ['audio'],
+                modalities: ['audio','text'],
                 instructions: lang === 'ru'
                   ? 'Продолжай интервью по‑русски.'
                   : 'Continue the interview in English.'

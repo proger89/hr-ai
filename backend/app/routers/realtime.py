@@ -160,15 +160,7 @@ async def realtime_websocket(
         )
         logger.info("Successfully connected to OpenAI Realtime API")
 
-        # Выполняем обязательный handshake с OpenAI, чтобы активировать сессию
-        try:
-            await openai_ws.send(json.dumps({"type": "session.create"}))
-            await openai_ws.recv()  # ждём подтверждения session.created
-        except Exception as e:
-            logger.error(f"OpenAI handshake failed: {e}")
-            raise
-
-        # Уведомляем браузер о создании сессии только после успешного handshake
+        # Уведомляем браузер о создании сессии только после подключения к OpenAI
         await websocket.send_json({
             "type": "session.created",
             "session": {
@@ -216,7 +208,7 @@ async def realtime_websocket(
                 "type": "message",
                 "role": "system",
                 "content": [{
-                    "type": "text",
+                    "type": "input_text",
                     "text": system_text_ru if candidate_lang == "ru" else system_text_en
                 }]
             }
@@ -242,7 +234,7 @@ async def realtime_websocket(
         await openai_ws.send(json.dumps({
             "type": "response.create",
             "response": {
-                "modalities": ["audio"],
+                "modalities": ["audio", "text"],
                 "instructions": (ru_instr if candidate_lang == "ru" else en_instr)
             }
         }))
@@ -377,7 +369,7 @@ async def proxy_openai_to_client(
                         await openai_ws.send(json.dumps({
                             "type": "response.create",
                             "response": {
-                                "modalities": ["audio"],
+                                "modalities": ["audio", "text"],
                                 "instructions": (
                                     "Call the tool `end_interview` NOW with your final overall_score, strengths, weaknesses, "
                                     "and recommendation (hire/maybe/reject). Then say a brief closing line. Do not ask new questions."

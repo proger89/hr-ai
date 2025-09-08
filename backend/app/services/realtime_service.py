@@ -152,14 +152,11 @@ def create_session_config(
     )
     
     # Добавляем язык в конфигурацию
-    response_lang = "ru-RU" if lang == "ru" else "en-US"
     output_voice = "alloy" if lang == "en" else "verse"
     return {
-        "type": "realtime",
-        "model": REALTIME_MODEL,
         "voice": output_voice,
         "instructions": instructions,
-        "output_modalities": ["audio"],
+        "modalities": ["text", "audio"],
         # Улучшаем распознавание речи и фиксируем язык распознавания
         "input_audio_transcription": {
             "model": "gpt-4o-mini-transcribe",
