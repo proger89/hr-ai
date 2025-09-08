@@ -1,0 +1,148 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: sber-backend
+    env_file:
+      - .env
+
+    environment:
+      - PYTHONUNBUFFERED=1
+      - GRPC_DEFAULT_SSL_ROOTS_FILE_PATH=/app/ca/ru_bundle.pem
+      - SMARTSPEECH_GRPC_ENDPOINT=smartspeech.sber.ru:443
+      - SMARTSPEECH_PLAINTEXT=0
+      - GRPC_DNS_RESOLVER=native
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=qwen2.5:7b-instruct-q5_K_M
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - uploads:/app/uploads
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*
+    networks:
+      - net
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: pgvector/pgvector:pg15
+    container_name: sber-postgres
+    environment:
+      - POSTGRES_DB=sber
+      - POSTGRES_USER=sber
+      - POSTGRES_PASSWORD=sber
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sber -d sber"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  stunnel:
+    build: ./stunnel
+    container_name: sber-stunnel
+    depends_on:
+      - backend
+    networks:
+      - net
+
+  nginx:
+    build: ./nginx
+    container_name: sber-nginx
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    networks:
+      - net
+
+  ollama:
+    image: ollama/ollama:0.3.14
+    container_name: sber-ollama
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - net
+
+  redis:
+    image: redis:7-alpine
+    container_name: sber-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6370:6379"
+    networks:
+      - net
+
+  worker:
+    build: ./backend
+    container_name: sber-worker
+    env_file:
+      - .env
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=qwen2.5:7b-instruct-q5_K_M
+    volumes:
+      - ./backend/app:/app/app
+      - uploads:/app/uploads
+    depends_on:
+      backend:
+        condition: service_started
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: celery -A app.celery_app.celery_app worker --loglevel=INFO
+    networks:
+      - net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: sber-prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - net
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: sber-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - net
+
+networks:
+  net:
+    driver: bridge
+
+volumes:
+  pgdata:
+  uploads:
+  ollama:
+
+

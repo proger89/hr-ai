@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Согласие на интервью</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <style>
+      :root{--accent:#3b5bdb;--bg:#f7f8fa;--text:#1f2a37}
+      *{box-sizing:border-box}
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;margin:0;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+      .bg-grad{background:radial-gradient(1200px 500px at 10% -10%, #e7f1ff 0%, rgba(231,241,255,0) 60%), radial-gradient(1000px 600px at 110% 0%, #f2f9ff 0%, rgba(242,249,255,0) 60%), var(--bg)}
+      header{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 16px;display:flex;align-items:center;justify-content:space-between}
+      main{flex:1;max-width:600px;margin:0 auto;padding:40px 16px;display:flex;align-items:center;width:100%}
+      .card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:40px;box-shadow:0 10px 30px rgba(0,0,0,.06);width:100%}
+      button{border:1px solid #cbd5e1;background:#fff;color:#111827;border-radius:8px;padding:8px 12px;cursor:pointer}
+      button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+      .fade-in{animation:fadeIn .25s ease-out both}
+      @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+      .icon-check{width:64px;height:64px;margin:0 auto 24px;background:#e7f5ff;border-radius:50%;display:flex;align-items:center;justify-content:center}
+      @media (max-width: 600px){
+        .card{padding:24px}
+      }
+    </style>
+  </head>
+  <body class="bg-grad">
+    <header>
+      <strong>Согласие на интервью</strong>
+      <select id="uiLang"><option value="ru">RU</option><option value="en">EN</option></select>
+    </header>
+    <main>
+      <div class="card fade-in">
+        <div class="icon-check">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="#1c7ed6">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+          </svg>
+        </div>
+        <h1 id="title" style="text-align:center;font-size:28px;margin:0 0 16px">Согласие и язык</h1>
+        <p id="desc" style="text-align:center;font-size:18px;color:#4b5563;margin:0 0 32px;line-height:1.6">
+          Интервью займёт 15–25 минут.<br>
+          Можно перебивать — ассистент остановится и выслушает вас.
+        </p>
+        
+        <div style="margin:32px 0;padding:20px;background:#f3f4f6;border-radius:12px">
+          <label style="display:flex;align-items:flex-start;cursor:pointer">
+            <input type="checkbox" id="consent" style="margin:4px 12px 0 0;cursor:pointer">
+            <span id="consentText" style="line-height:1.5">
+              Я даю согласие на обработку и анализ моего голоса в рамках данного интервью. Все данные будут использованы исключительно для оценки соответствия вакансии.
+            </span>
+          </label>
+        </div>
+        
+        <div style="margin:24px 0">
+          <label for="speechLang" style="display:block;margin-bottom:8px;font-weight:500">Язык интервью:</label>
+          <select id="speechLang" class="form-select">
+            <option value="ru-RU">Русский</option>
+            <option value="en-US">English</option>
+          </select>
+        </div>
+        
+        <button id="btnStart" class="primary btn-lg" style="width:100%;margin-top:32px;font-size:18px;padding:12px" disabled>
+          Начать интервью
+        </button>
+      </div>
+    </main>
+    
+    <script>
+      (function(){ try{ document.querySelectorAll('button').forEach(b=>{ b.classList.add('btn'); if(b.classList.contains('primary')){ b.classList.add('btn-primary'); } else { b.classList.add('btn-outline-secondary'); } }); document.querySelectorAll('select').forEach(s=> s.classList.add('form-select')); }catch{} })();
+      
+      const tr = {
+        ru: { 
+          title: 'Согласие и язык', 
+          desc: 'Интервью займёт 15–25 минут.\nМожно перебивать — ассистент остановится и выслушает вас.',
+          consent: 'Я даю согласие на обработку и анализ моего голоса в рамках данного интервью. Все данные будут использованы исключительно для оценки соответствия вакансии.',
+          lang: 'Язык интервью:',
+          start: 'Начать интервью'
+        },
+        en: { 
+          title: 'Consent and Language', 
+          desc: 'The interview will take 15-25 minutes.\nYou can interrupt — the assistant will stop and listen to you.',
+          consent: 'I consent to the processing and analysis of my voice during this interview. All data will be used exclusively for vacancy matching assessment.',
+          lang: 'Interview language:',
+          start: 'Start Interview'
+        }
+      };
+      
+      const uiSel = document.getElementById('uiLang');
+      const speechSel = document.getElementById('speechLang');
+      const consentCheck = document.getElementById('consent');
+      const btnStart = document.getElementById('btnStart');
+      
+      function applyI18n() {
+        const l = uiSel.value;
+        const t = tr[l] || tr.ru;
+        document.getElementById('title').textContent = t.title;
+        document.getElementById('desc').innerHTML = t.desc.replace(/\n/g, '<br>');
+        document.getElementById('consentText').textContent = t.consent;
+        document.querySelector('label[for="speechLang"]').textContent = t.lang;
+        btnStart.textContent = t.start;
+        document.documentElement.lang = l;
+      }
+      
+      uiSel.value = localStorage.getItem('uiLang') || ((navigator.language||'ru').startsWith('ru') ? 'ru' : 'en');
+      speechSel.value = localStorage.getItem('speechLang') || ((navigator.language||'ru').startsWith('ru') ? 'ru-RU' : 'en-US');
+      
+      applyI18n();
+      
+      uiSel.addEventListener('change', () => {
+        localStorage.setItem('uiLang', uiSel.value);
+        applyI18n();
+      });
+      
+      speechSel.addEventListener('change', () => {
+        localStorage.setItem('speechLang', speechSel.value);
+      });
+      
+      consentCheck.addEventListener('change', () => {
+        btnStart.disabled = !consentCheck.checked;
+      });
+      
+      btnStart.addEventListener('click', async () => {
+        try {
+          btnStart.disabled = true;
+          btnStart.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>' + btnStart.textContent;
+          
+          // Сохраняем язык
+          localStorage.setItem('interviewLang', speechSel.value);
+          
+          // Переходим на страницу интервью
+          location.href = '/interview.html';
+          
+        } catch (err) {
+          alert('Ошибка: ' + (err?.message || String(err)));
+          btnStart.disabled = false;
+        }
+      });
+      
+      // Enter для начала
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !btnStart.disabled) {
+          e.preventDefault();
+          btnStart.click();
+        }
+      });
+    </script>
+  </body>
+</html>

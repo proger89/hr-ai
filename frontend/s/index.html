@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Выбор слота интервью</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu; margin:0; padding:16px;}
+  header{display:flex; flex-direction:column; gap:8px; margin-bottom:16px}
+  .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+  select, input, button{padding:8px; font-size:14px}
+  #slots{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
+  .card{border:1px solid #ddd; border-radius:8px; padding:12px}
+  .card h4{margin:0 0 8px 0; font-size:14px}
+  .muted{color:#666; font-size:12px}
+  @media (max-width:600px){ #slots{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+  <header>
+    <h2>Самопланировщик</h2>
+    <div class="row">
+      <label>Вакансия ID <input id="vacancyId" type="number" min="1"/></label>
+      <button id="load">Показать слоты</button>
+    </div>
+    <div class="row">
+      <label>Кандидат ID <input id="candidateId" type="number" min="1"/></label>
+    </div>
+  </header>
+
+  <section id="empty" class="muted">Нет доступных слотов</section>
+  <section id="slots"></section>
+
+  <script>
+  (function(){ try{ document.querySelectorAll('button').forEach(b=>{ b.classList.add('btn'); if(b.textContent.includes('Показать')||b.textContent.includes('Забронировать')) b.classList.add('btn-primary'); else b.classList.add('btn-outline-secondary'); }); document.querySelectorAll('input,select').forEach(i=> i.classList.add('form-control')); }catch{} })();
+  const apiBase = location.origin.replace(/:\/\d+$/, ':8080');
+
+  function fmt(dt){
+    try{ return new Date(dt).toLocaleString(); }catch(e){ return String(dt); }
+  }
+
+  async function fetchSlots(vacancyId){
+    const r = await fetch(`${apiBase}/api/scheduler/slots?vacancy_id=${encodeURIComponent(vacancyId)}`);
+    if(!r.ok) throw new Error('failed');
+    return (await r.json()).items || [];
+  }
+
+  async function bookSlot(slotId, candidateId){
+    const r = await fetch(`${apiBase}/api/scheduler/book`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({slot_id: slotId, candidate_id: candidateId||null})
+    });
+    if(!r.ok){
+      const t = await r.text();
+      throw new Error(t || 'booking failed');
+    }
+    return await r.json();
+  }
+
+  function renderSlots(items){
+    const $slots = document.getElementById('slots');
+    const $empty = document.getElementById('empty');
+    $slots.innerHTML = '';
+    if(!items.length){
+      $empty.style.display = 'block';
+      return;
+    }
+    $empty.style.display = 'none';
+    for(const s of items){
+      const div = document.createElement('div');
+      div.className='card';
+      div.innerHTML = `
+        <h4>Слот #${s.id}</h4>
+        <div class="muted">${fmt(s.start_at)} — ${fmt(s.end_at)}</div>
+        <div class="muted">Вместимость: ${s.capacity}</div>
+        <div class="row" style="margin-top:8px">
+          <button data-id="${s.id}">Забронировать</button>
+        </div>
+      `;
+      div.querySelector('button').addEventListener('click', async (e)=>{
+        const cid = Number(document.getElementById('candidateId').value)||null;
+        try{
+          const res = await bookSlot(s.id, cid);
+          alert(`Забронировано. Код: ${res.code}`);
+        }catch(err){
+          alert('Ошибка: ' + (err?.message||err));
+        }
+      });
+      $slots.appendChild(div);
+    }
+  }
+
+  document.getElementById('load').addEventListener('click', async ()=>{
+    const v = Number(document.getElementById('vacancyId').value);
+    if(!v){ alert('Укажите vacancyId'); return; }
+    try{
+      const items = await fetchSlots(v);
+      renderSlots(items);
+    }catch(err){
+      alert('Ошибка загрузки слотов');
+    }
+  });
+
+  // авто: если есть v в query
+  const params = new URLSearchParams(location.search);
+  const vq = Number(params.get('v'));
+  if(vq){
+    document.getElementById('vacancyId').value = vq;
+    document.getElementById('load').click();
+  }
+  </script>
+</body>
+</html>
+
+

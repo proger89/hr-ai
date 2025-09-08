@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Вакансия</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+      body{background:#f7f8fa}
+      .card{border-radius:12px;border:1px solid #e5e7eb}
+      .pill{padding:4px 8px;border-radius:999px;background:#eceff5}
+      .spinner{display:inline-block;width:1rem;height:1rem;border:2px solid #cbd5e1;border-top-color:#1c7ed6;border-radius:50%;animation:spin .6s linear infinite}
+      @keyframes spin{to{transform:rotate(360deg)}}
+    </style>
+  </head>
+  <body class="p-3">
+    <div class="container">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 id="title">Вакансия</h3>
+        <div>
+          <a href="/hr.html#vacancies" class="btn btn-outline-secondary">Назад</a>
+          <button id="btnDelete" class="btn btn-outline-danger">Удалить</button>
+        </div>
+      </div>
+
+      <div id="loading" class="alert alert-info"><span class="spinner"></span> Загрузка…</div>
+
+      <div id="content" style="display:none">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="card p-3">
+              <div class="d-flex justify-content-between"><strong>Информация</strong><span class="pill" id="lang">—</span></div>
+              <div class="mt-2 small text-muted">Ключевые слова</div>
+              <div id="keywords" class="mt-1"></div>
+              <div class="mt-3">
+                <div class="small text-muted">Файл JD</div>
+                <div class="d-flex gap-2 align-items-center">
+                  <a id="btnDownloadJD" class="btn btn-outline-secondary btn-sm" target="_blank">Скачать</a>
+                </div>
+              </div>
+              <div class="mt-3">
+                <label class="form-label">Название</label>
+                <input id="editTitle" class="form-control" />
+                <div class="d-flex justify-content-end mt-2"><button id="btnSaveMeta" class="btn btn-primary">Сохранить</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card p-3">
+              <div class="d-flex justify-content-between"><strong>Сценарий интервью</strong><span id="scnStatus" class="pill">—</span></div>
+              <div class="row g-2 mt-2">
+                <div class="col-12"><label class="form-label">Вступление</label><textarea id="sc_intro" class="form-control" rows="2"></textarea></div>
+                <div class="col-12"><label class="form-label">Опыт</label><textarea id="sc_experience" class="form-control" rows="3"></textarea></div>
+                <div class="col-12"><label class="form-label">Стек</label><textarea id="sc_stack" class="form-control" rows="3"></textarea></div>
+                <div class="col-12"><label class="form-label">Кейсы</label><textarea id="sc_cases" class="form-control" rows="3"></textarea></div>
+                <div class="col-12"><label class="form-label">Коммуникация</label><textarea id="sc_communication" class="form-control" rows="2"></textarea></div>
+                <div class="col-12"><label class="form-label">Финал</label><textarea id="sc_final" class="form-control" rows="2"></textarea></div>
+              </div>
+              <div class="d-flex justify-content-end gap-2 mt-2">
+                <button id="btnRegen" class="btn btn-outline-secondary">Сгенерировать заново</button>
+                <button id="btnSaveScenario" class="btn btn-outline-secondary">Сохранить</button>
+                <button id="btnSaveScenarioVer" class="btn btn-primary">Сохранить версию</button>
+              </div>
+              <div id="regenBar" class="progress mt-2" style="height:8px; display:none"><div class="progress-bar" role="progressbar" style="width:0%"></div></div>
+              <div class="mt-3">
+                <div class="small text-muted">Версии</div>
+                <ul id="verList" class="mt-1"></ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function qs(id){ return document.getElementById(id); }
+      function param(name){ const u=new URL(location.href); return u.searchParams.get(name)||''; }
+      const id = param('id');
+      async function load(){
+        try{
+          const r = await fetch(`/api/vacancies/${encodeURIComponent(id)}`);
+          const v = await r.json();
+          if(!r.ok) throw new Error(v?.detail||r.status);
+          qs('title').textContent = `${v.title} (#${v.id})`;
+          qs('editTitle').value = v.title||'';
+          qs('lang').textContent = v.lang||'—';
+          qs('keywords').innerHTML = (v.keywords||[]).map(k=>`<span class="pill me-1">${k}</span>`).join('');
+          const sc = v.scenario||{};
+          qs('sc_intro').value=sc.intro||''; qs('sc_experience').value=sc.experience||''; qs('sc_stack').value=sc.stack||''; qs('sc_cases').value=sc.cases||''; qs('sc_communication').value=sc.communication||''; qs('sc_final').value=sc.final||'';
+          qs('scnStatus').textContent = Object.keys(sc).length? 'готов':'—';
+          await renderVersions();
+          qs('loading').style.display='none'; qs('content').style.display='block';
+        }catch(err){ qs('loading').className='alert alert-danger'; qs('loading').textContent = 'Ошибка загрузки: '+(err?.message||String(err)); }
+      }
+      async function renderVersions(){
+        try{ const r=await fetch(`/api/vacancies/${encodeURIComponent(id)}/scenario`); const d=await r.json(); const ver=d?.versions||[]; const ul=qs('verList'); ul.innerHTML=''; ver.forEach((v,i)=>{ const li=document.createElement('li'); const a=document.createElement('a'); a.href='#'; a.textContent=`${i+1}) ${new Date(v.date||Date.now()).toLocaleString()}`; a.addEventListener('click', (e)=>{ e.preventDefault(); const sc=v.data||{}; qs('sc_intro').value=sc.intro||''; qs('sc_experience').value=sc.experience||''; qs('sc_stack').value=sc.stack||''; qs('sc_cases').value=sc.cases||''; qs('sc_communication').value=sc.communication||''; qs('sc_final').value=sc.final||''; }); li.appendChild(a); ul.appendChild(li); }); }catch{}
+      }
+      qs('btnSaveMeta').addEventListener('click', async ()=>{
+        try{ const title=qs('editTitle').value||''; const r=await fetch(`/api/vacancies/${encodeURIComponent(id)}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title }) }); const d=await r.json(); if(!r.ok) throw new Error(d?.detail||r.status); qs('title').textContent = `${d.title} (#${d.id})`; }catch(err){ alert('Ошибка: '+(err?.message||String(err))); }
+      });
+      async function saveScenario(save_version){
+        const body={ intro:qs('sc_intro').value, experience:qs('sc_experience').value, stack:qs('sc_stack').value, cases:qs('sc_cases').value, communication:qs('sc_communication').value, final:qs('sc_final').value, save_version };
+        const btn = save_version? qs('btnSaveScenarioVer'): qs('btnSaveScenario'); const old=btn.textContent; btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Сохранение…';
+        try{ const r=await fetch(`/api/vacancies/${encodeURIComponent(id)}/scenario`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); const d=await r.json(); if(!r.ok) throw new Error(d?.detail||r.status); await renderVersions(); }catch(err){ alert('Ошибка: '+(err?.message||String(err))); } finally { btn.disabled=false; btn.textContent=old; }
+      }
+      qs('btnSaveScenario').addEventListener('click', ()=> saveScenario(false));
+      qs('btnSaveScenarioVer').addEventListener('click', ()=> saveScenario(true));
+      qs('btnDownloadJD').href = `/api/vacancies/${encodeURIComponent(id)}/jd/download`;
+
+      // Async regeneration with polling
+      qs('btnRegen').addEventListener('click', async ()=>{
+        try{
+          const body = { regen: true };
+          const r = await fetch(`/api/vacancies/${encodeURIComponent(id)}/scenario`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+          const d = await r.json(); if(!r.ok) throw new Error(d?.detail||r.status);
+          if(!d.task_id){ alert('Не удалось запустить генерацию'); return; }
+          const bar = qs('regenBar'); const fill = bar.querySelector('.progress-bar'); bar.style.display='block'; fill.style.width='0%';
+          let done=false; const tid=d.task_id; const start=Date.now();
+          async function tick(){
+            try{
+              const rs = await fetch(`/api/tasks/${encodeURIComponent(tid)}`); const s = await rs.json();
+              const p = Math.max(0, Math.min(100, Number(s.progress||0)));
+              fill.style.width = p+'%';
+              if(s.ready && s.ok){ bar.style.display='none'; await refreshScenario(); done=true; return; }
+              if(s.state==='FAILURE'){ bar.style.display='none'; alert('Генерация не удалась'); done=true; return; }
+            }catch{}
+            if(!done && Date.now()-start < 180000) setTimeout(tick, 1000);
+          }
+          tick();
+        }catch(err){ alert('Ошибка: '+(err?.message||String(err))); }
+      });
+
+      async function refreshScenario(){ try{ const r=await fetch(`/api/vacancies/${encodeURIComponent(id)}`); const v=await r.json(); if(r.ok && v?.scenario){ qs('sc_intro').value=v.scenario.intro||''; qs('sc_experience').value=v.scenario.experience||''; qs('sc_stack').value=v.scenario.stack||''; qs('sc_cases').value=v.scenario.cases||''; qs('sc_communication').value=v.scenario.communication||''; qs('sc_final').value=v.scenario.final||''; await renderVersions(); } }catch{} }
+      qs('btnDelete').addEventListener('click', async ()=>{
+        if(!confirm('Удалить вакансию?')) return;
+        try{ const r=await fetch(`/api/vacancies/${encodeURIComponent(id)}`, { method:'DELETE' }); if(!r.ok){ const d=await r.json(); throw new Error(d?.detail||r.status); } location.href='/hr.html#vacancies'; }catch(err){ alert('Ошибка: '+(err?.message||String(err))); }
+      });
+      load();
+    </script>
+  </body>
+  </html>
+
+

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Личная ссылка</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <style>
+      :root{--accent:#3b5bdb;--bg:#f7f8fa;--text:#1f2a37}
+      *{box-sizing:border-box}
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;margin:0;background:var(--bg);color:var(--text)}
+      .bg-grad{background:radial-gradient(1200px 500px at 10% -10%, #e7f1ff 0%, rgba(231,241,255,0) 60%), radial-gradient(1000px 600px at 110% 0%, #f2f9ff 0%, rgba(242,249,255,0) 60%), var(--bg)}
+      header{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 16px;display:flex;align-items:center;justify-content:space-between}
+      main{max-width:720px;margin:24px auto;padding:0 16px;min-height:calc(100vh - 80px);display:flex;align-items:center}
+      .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.06)}
+      .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+      button{border:1px solid #cbd5e1;background:#fff;color:#111827;border-radius:8px;padding:8px 12px;cursor:pointer}
+      button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+      .pill{padding:4px 8px;border-radius:999px;background:#eceff5}
+      .fade-in{animation:fadeIn .25s ease-out both}
+      @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+      /* Responsive */
+      @media (max-width: 600px){
+        header{flex-direction:column;align-items:flex-start;gap:8px}
+        main{padding:0 12px}
+        .row{flex-wrap:wrap}
+      }
+    </style>
+  </head>
+  <body class="bg-grad">
+    <header>
+      <strong id="hdr">Личная ссылка</strong>
+      <select id="uiLang"><option value="ru">RU</option><option value="en">EN</option></select>
+    </header>
+    <main>
+      <div class="card fade-in" style="max-width:600px;margin:auto">
+        <h2 id="title" style="text-align:center">Проверка оборудования</h2>
+        <p id="desc" style="text-align:center;color:#6b7280">Перед началом интервью необходимо проверить микрофон и звук</p>
+        
+        <!-- Микрофон -->
+        <div style="margin:30px 0;padding:20px;background:#f3f4f6;border-radius:12px">
+          <h3 style="margin:0 0 20px;font-size:18px">Микрофон</h3>
+          <div id="micCheck" style="display:none">
+            <div style="display:flex;align-items:center;gap:20px">
+              <div style="width:50px;height:50px;border-radius:50%;background:#e5e7eb;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <svg id="micIcon" width="24" height="24" viewBox="0 0 24 24" fill="#6b7280">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+              </div>
+              <div style="flex:1">
+                <div id="micStatus" style="color:#6b7280;margin-bottom:8px">Проверка микрофона...</div>
+                <div style="height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden">
+                  <div id="micLevel" style="width:0%;height:100%;background:#10b981;transition:width 0.1s"></div>
+                </div>
+              </div>
+            </div>
+            <div id="micReadyMsg" style="display:none;color:#10b981;margin-top:15px;font-weight:500"></div>
+          </div>
+          <div id="micLoading" style="text-align:center;color:#6b7280">
+            <div class="spinner-border spinner-border-sm text-secondary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            Инициализация...
+          </div>
+        </div>
+        
+        <!-- Звук -->
+        <div style="margin:30px 0;padding:20px;background:#f3f4f6;border-radius:12px">
+          <h3 id="ttsTitle" style="margin:0 0 20px;font-size:18px">Проверка звука</h3>
+          <div style="display:flex;align-items:center;gap:15px;flex-wrap:wrap">
+            <button id="btnTts" class="btn btn-outline-primary">Тест звука</button>
+            <audio id="ttsPlayer" controls style="flex:1;min-width:200px"></audio>
+          </div>
+          <p id="ttsHint" style="color:#6b7280;font-size:14px;margin:10px 0 0">Если не слышно — проверьте громкость</p>
+        </div>
+        
+        <div id="startSection" style="display:none">
+          <button id="btnStart" class="primary btn-lg" style="width:100%">Далее</button>
+        </div>
+        
+        <div id="errorSection" style="display:none">
+          <div style="color:#ef4444;text-align:center;margin:20px 0">
+            <div style="font-size:48px;margin-bottom:10px">❌</div>
+            <div style="font-weight:500">Микрофон не доступен</div>
+            <p style="font-size:14px;color:#6b7280;margin-top:10px">Пожалуйста, разрешите доступ к микрофону в браузере и перезагрузите страницу</p>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script>
+      (function(){ try{ document.querySelectorAll('button').forEach(b=>{ b.classList.add('btn'); if(b.classList.contains('primary')){ b.classList.add('btn-primary'); } else { b.classList.add('btn-outline-secondary'); } }); document.querySelectorAll('select').forEach(s=> s.classList.add('form-select')); }catch{} })();
+      const Telemetry = { emit(n,p){ try{ console.log('[telemetry]', n, p||{}); }catch{} } };
+      const tr = {
+        ru: { hdr:'Подготовка к интервью', title:'Проверка оборудования', desc:'Перед началом интервью необходимо проверить микрофон и звук', start:'Далее', checking:'Проверка микрофона...', ready:'✓ Микрофон работает', error:'❌ Микрофон не доступен', errorDesc:'Пожалуйста, разрешите доступ к микрофону в браузере и перезагрузите страницу', ttsTitle:'Проверка звука', ttsTest:'Тест звука', ttsHint:'Если не слышно — проверьте громкость' },
+        en: { hdr:'Interview Preparation', title:'Equipment Check', desc:'Please check your microphone and sound before starting', start:'Next', checking:'Checking microphone...', ready:'✓ Microphone is working', error:'❌ Microphone not available', errorDesc:'Please allow microphone access in your browser and reload the page', ttsTitle:'Sound Check', ttsTest:'Test Sound', ttsHint:'If you can\'t hear — check volume' }
+      };
+      const uiSel = document.getElementById('uiLang');
+      function applyI18n(){ 
+        const l=uiSel.value; 
+        const t=tr[l]||tr.ru; 
+        document.getElementById('hdr').textContent=t.hdr; 
+        document.getElementById('title').textContent=t.title; 
+        document.getElementById('desc').textContent=t.desc; 
+        document.getElementById('btnStart').textContent=t.start; 
+        document.getElementById('ttsTitle').textContent=t.ttsTitle;
+        document.getElementById('btnTts').textContent=t.ttsTest;
+        document.getElementById('ttsHint').textContent=t.ttsHint;
+        document.documentElement.lang=l; 
+      }
+      uiSel.value = (localStorage.getItem('uiLang')||((navigator.language||'ru').startsWith('ru')?'ru':'en'));
+      applyI18n(); uiSel.addEventListener('change', ()=>{ localStorage.setItem('uiLang', uiSel.value); applyI18n(); });
+      const sp = new URLSearchParams(location.search);
+      const cid = sp.get('cid')||'';
+      
+      // Проверка микрофона
+      let micStream = null;
+      let micInterval = null;
+      
+      async function checkMicrophone() {
+        const micCheck = document.getElementById('micCheck');
+        const micLoading = document.getElementById('micLoading');
+        const startSection = document.getElementById('startSection');
+        const errorSection = document.getElementById('errorSection');
+        const micStatus = document.getElementById('micStatus');
+        const micLevel = document.getElementById('micLevel');
+        const micReadyMsg = document.getElementById('micReadyMsg');
+        
+        try {
+          // Запрашиваем доступ к микрофону
+          micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          
+          // Скрываем загрузку, показываем индикатор
+          micLoading.style.display = 'none';
+          micCheck.style.display = 'block';
+          
+          // Создаем анализатор аудио
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const analyser = audioContext.createAnalyser();
+          const microphone = audioContext.createMediaStreamSource(micStream);
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          
+          microphone.connect(analyser);
+          analyser.fftSize = 256;
+          
+          // Визуализация уровня звука
+          micInterval = setInterval(() => {
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            const level = Math.min(100, (average / 128) * 100);
+            micLevel.style.width = level + '%';
+          }, 100);
+          
+          // Микрофон работает
+          setTimeout(() => {
+            micReadyMsg.textContent = tr[uiSel.value].ready;
+            micReadyMsg.style.display = 'block';
+            micStatus.style.color = '#10b981';
+            startSection.style.display = 'block';
+          }, 1500);
+          
+        } catch (err) {
+          console.error('Ошибка доступа к микрофону:', err);
+          micLoading.style.display = 'none';
+          errorSection.style.display = 'block';
+          document.querySelector('#errorSection p:last-child').textContent = tr[uiSel.value].errorDesc;
+        }
+      }
+      
+      // Запускаем проверку микрофона при загрузке
+      checkMicrophone();
+      
+      // Проверка звука
+      const btnTts = document.getElementById('btnTts');
+      const ttsPlayer = document.getElementById('ttsPlayer');
+      
+      btnTts.addEventListener('click', async () => {
+        try {
+          btnTts.disabled = true;
+          const lang = uiSel.value;
+          const text = lang === 'ru' ? 'Привет! Я ваш виртуальный ассистент. Проверьте, пожалуйста, громкость звука.' : 'Hello! I am your virtual assistant. Please check the volume.';
+          
+          // Используем OpenAI TTS
+          const url = `/api/tts/openai/synthesize?text=${encodeURIComponent(text)}&voice=alloy`;
+          
+          const res = await fetch(url, { method: 'POST' });
+          if (!res.ok) {
+            throw new Error('TTS error: ' + res.status);
+          }
+          
+          const blob = await res.blob();
+          ttsPlayer.src = URL.createObjectURL(blob);
+          await ttsPlayer.play();
+        } catch (err) {
+          console.error('TTS error:', err);
+          alert('Ошибка воспроизведения звука');
+        } finally {
+          btnTts.disabled = false;
+        }
+      });
+      
+      const btnStart = document.getElementById('btnStart');
+      btnStart.addEventListener('click', async ()=>{
+        try{
+          btnStart.disabled = true;
+          const orig = btnStart.innerHTML;
+          btnStart.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>' + (btnStart.textContent||'Далее');
+          
+          // Останавливаем микрофон
+          if (micStream) {
+            micStream.getTracks().forEach(track => track.stop());
+          }
+          if (micInterval) {
+            clearInterval(micInterval);
+          }
+          
+          // Сохраняем ID кандидата
+          localStorage.setItem('currentCandidateId', cid||'');
+          
+          // Переходим на страницу согласия
+          location.href='/consent.html';
+          
+        }catch(err){
+          alert('Ошибка: '+(err?.message||String(err)));
+        }
+        finally{
+          btnStart.disabled = false;
+          btnStart.innerHTML = orig;
+        }
+      });
+      
+      // Enter to start
+      window.addEventListener('keydown', (e)=>{ 
+        if(e.key==='Enter' && document.getElementById('startSection').style.display !== 'none'){ 
+          e.preventDefault(); 
+          btnStart.click(); 
+        } 
+      });
+    </script>
+  </body>
+  </html>
+
+

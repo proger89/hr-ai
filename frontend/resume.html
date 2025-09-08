@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Резюме</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+      :root{ --accent:#3b5bdb; --bg:#f7f8fa; --text:#1f2a37 }
+      *{ box-sizing:border-box }
+      body{ font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif; margin:0; background:var(--bg); color:var(--text) }
+      header{ position:sticky; top:0; background:#fff; border-bottom:1px solid #e5e7eb; padding:10px 16px; display:flex; align-items:center; justify-content:space-between }
+      main{ max-width:960px; margin:16px auto; padding:0 12px }
+      .pill{ padding:4px 8px; border-radius:999px; background:#eceff5 }
+      .pill.ok{ background:#e7f5ff; color:#1c7ed6 }
+      .card{ background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px }
+      .meta{ display:flex; gap:8px; flex-wrap:wrap; align-items:center }
+      .resume-text{ white-space:pre-wrap; line-height:1.5; }
+      .resume-text mark{ background:#fff3bf; padding:0 2px; border-radius:3px }
+      .muted{ color:#6b7280 }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="d-flex align-items-center gap-2">
+        <a class="btn btn-outline-secondary btn-sm" href="/hr.html#candidates">Назад</a>
+        <strong id="title">Резюме</strong>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <a id="btnDownload" class="btn btn-outline-secondary btn-sm" target="_blank">Скачать файл</a>
+      </div>
+    </header>
+    <main>
+      <div class="card">
+        <div class="d-flex justify-content-between align-items-center">
+          <h3 id="candName" class="m-0">—</h3>
+          <span id="match" class="pill">—</span>
+        </div>
+        <div class="meta mt-2">
+          <span class="muted">Вакансия:</span><span id="vacTitle" class="pill">—</span>
+        </div>
+      </div>
+      <div id="content" class="card mt-3">
+        <div class="muted mb-2">Текст резюме</div>
+        <div id="resumeText" class="resume-text">Загрузка…</div>
+      </div>
+    </main>
+    <script>
+      function param(name){ try{ const u=new URL(location.href); return u.searchParams.get(name)||''; }catch{ return ''; } }
+      const id = param('id') || location.pathname.split('/').pop();
+      function escHtml(s){ return (s||'').replace(/[&<>"']/g, m=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m])); }
+      function highlight(text, keywords){
+        try{
+          // Используем только динамические ключевые слова
+          let kws = (keywords||[]).map(x=> String(x||'').trim().toLowerCase()).filter(Boolean);
+          
+          if(!kws.length) return escHtml(text||'');
+          
+          // Создаем паттерны для поиска с учетом границ слов
+          const patterns = kws.map(kw => {
+            // Экранируем специальные символы
+            const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Ищем слово с учетом границ и возможных окончаний (для русских и английских слов)
+            return `\\b${escaped}[a-zа-я]*\\b`;
+          });
+          
+          const rx = new RegExp('(' + patterns.join('|') + ')', 'gi');
+          return escHtml(text||'').replace(rx, '<mark>$1</mark>');
+        }catch{ return escHtml(text||''); }
+      }
+      async function load(){
+        try{
+          const r = await fetch(`/api/candidates/${encodeURIComponent(id)}/resume_text`);
+          const d = await r.json();
+          if(!r.ok){ throw new Error(d?.detail||r.status); }
+          document.getElementById('title').textContent = `Резюме #${id}`;
+          document.getElementById('candName').textContent = d.name||'—';
+          document.getElementById('vacTitle').textContent = d.vacancy_title || (d.vacancy_id? ('#'+d.vacancy_id):'—');
+          let text = (d.text||'').trim();
+          if(!text){ document.getElementById('resumeText').textContent = 'Текст отсутствует'; }
+          else {
+            // Попытаться подтянуть динамические ключевые слова вакансии для подсветки
+            try{
+              if(d.vacancy_id){
+                const vr = await fetch(`/api/vacancies/${encodeURIComponent(d.vacancy_id)}/keywords`);
+                const vj = await vr.json();
+                const kws = (vr.ok? (vj.keywords||[]) : []);
+                document.getElementById('resumeText').innerHTML = highlight(text, kws);
+              } else {
+                document.getElementById('resumeText').textContent = text;
+              }
+            }catch{ document.getElementById('resumeText').textContent = text; }
+          }
+        }catch(err){ document.getElementById('resumeText').textContent = 'Ошибка: '+(err?.message||String(err)); }
+        try{
+          const r2 = await fetch(`/api/candidates/${encodeURIComponent(id)}`);
+          const p = await r2.json();
+          if(r2.ok){ const pct = (p?.summary?.match_pct!=null)? Math.round((p.summary.match_pct||0)*100)+'%' : '—'; document.getElementById('match').textContent = pct; }
+        }catch{}
+        try{
+          document.getElementById('btnDownload').href = `/api/upload/cv/file/${encodeURIComponent(id)}`;
+        }catch{}
+      }
+      load();
+    </script>
+  </body>
+  </html>
+
+

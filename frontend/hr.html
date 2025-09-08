@@ -1,0 +1,933 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HR Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <style>
+      :root{--accent:#3b5bdb;--bg:#f7f8fa;--text:#1f2a37}
+      *{box-sizing:border-box}
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;margin:0;background:var(--bg);color:var(--text)}
+      header{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;padding:10px 16px;display:flex;align-items:center;justify-content:space-between}
+      main{display:flex;min-height:calc(100vh - 52px)}
+      nav{width:240px;background:#fff;border-right:1px solid #e5e7eb;padding:12px;display:flex;flex-direction:column}
+      nav a{display:block;padding:8px 10px;border-radius:8px;color:inherit;text-decoration:none}
+      nav a.active{background:#edf2ff;color:#1c7ed6}
+      nav a:hover{background:#f3f4f6}
+      section{flex:1;padding:16px}
+      .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-bottom:12px}
+      .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+      button{border:1px solid #cbd5e1;background:#fff;color:#111827;border-radius:8px;padding:8px 12px;cursor:pointer}
+      button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+      table{width:100%;border-collapse:separate;border-spacing:0 8px}
+      th,td{padding:8px;text-align:left}
+      th{font-size:12px;color:#6b7280;text-transform:uppercase}
+      .pill{padding:4px 8px;border-radius:999px;background:#eceff5}
+      /* Skeleton & States */
+      .skel{position:relative}
+      .skel .skel-line{height:12px;background:linear-gradient(90deg,#f1f3f5,#e9ecef,#f1f3f5);background-size:200% 100%;animation:shimmer 1.2s infinite; border-radius:6px;margin:6px 0}
+      @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+      .empty{padding:12px;border:1px dashed #cbd5e1;border-radius:8px;color:#6b7280}
+      /* Progress smoothing */
+      .progress .progress-bar{transition:width .3s ease}
+      .error-banner{padding:8px;border:1px solid #ff6b6b;background:#fff5f5;color:#c92a2a;border-radius:8px}
+      /* Kanban */
+      .kanban{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+      .k-col{background:#fff;border:1px solid #e5e7eb;border-radius:12px;min-height:260px;display:flex;flex-direction:column}
+      .k-col h4{margin:8px 8px 4px;font-size:14px}
+      .k-drop{flex:1;padding:8px;display:flex;flex-direction:column;gap:8px}
+      .k-card{background:#f8f9fa;border:1px solid #e9ecef;border-radius:10px;padding:8px;cursor:grab}
+      .k-card.dragging{opacity:.6}
+      .k-drop.over{outline:2px dashed #91a7ff; outline-offset:4px}
+      @media (max-width: 1000px){ .kanban{grid-template-columns:repeat(3,1fr)} }
+      @media (max-width: 640px){ .kanban{grid-template-columns:1fr} }
+      /* Responsive */
+      @media (max-width: 800px){
+        header{flex-direction:column;align-items:flex-start;gap:8px}
+        main{flex-direction:column}
+        nav{width:100%;display:flex;gap:6px;overflow:auto}
+        section{padding:12px}
+        .row{flex-wrap:wrap}
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loginOverlay" style="position:fixed;inset:0;background:rgba(255,255,255,.96);display:none;align-items:center;justify-content:center;z-index:1000">
+      <div class="card" style="width:320px">
+        <div style="font-weight:700;margin-bottom:8px">Вход HR</div>
+        <label>Логин<input id="loginUser" type="text" style="width:100%;margin-top:4px" placeholder="admin"/></label>
+        <label style="margin-top:8px">Пароль<input id="loginPass" type="password" style="width:100%;margin-top:4px" placeholder="admin"/></label>
+        <div class="row" style="margin-top:10px;justify-content:space-between">
+          <button id="btnLogin">Войти</button>
+          <div class="small" id="loginMsg" style="color:#c92a2a"></div>
+        </div>
+      </div>
+    </div>
+    <header>
+      <strong id="hdrTitle">HR‑админка</strong>
+      <div class="row">
+        <select id="uiLang"><option value="ru">RU</option><option value="en">EN</option></select>
+      </div>
+    </header>
+    <main>
+      <nav>
+        <a href="#dashboard" id="lnkDash" class="active">Дэшборд</a>
+        <a href="#vacancies" id="lnkVac">Вакансии</a>
+        <a href="#candidates" id="lnkCand">Кандидаты</a>
+        <div style="flex-grow: 1"></div>
+        <a href="#" id="lnkLogout" style="color: #dc3545;">Выход</a>
+      </nav>
+      <section>
+        <div id="view-dashboard">
+          <div class="row">
+            <div class="card"><div class="small">Кандидатов всего</div><div id="kpiTotal" style="font-size:24px;font-weight:700">—</div></div>
+            <div class="card"><div class="small">Прошли отбор</div><div id="kpiPassed" style="font-size:24px;font-weight:700">—</div></div>
+            <div class="card"><div class="small">Инвайтов</div><div id="kpiInv" style="font-size:24px;font-weight:700">—</div></div>
+            <div class="card"><div class="small">Назначено слотов</div><div id="kpiSlots" style="font-size:24px;font-weight:700">—</div></div>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <div class="card" style="flex:1">
+              <div class="small">TTS TTFB (ms)</div>
+              <div id="sparkTtfb" style="height:42px;display:flex;gap:2px;align-items:flex-end"></div>
+            </div>
+            <div class="card" style="flex:1">
+              <div class="small">Barge-in время (ms)</div>
+              <div id="sparkBarge" style="height:42px;display:flex;gap:2px;align-items:flex-end"></div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:12px">
+            <div class="row" style="justify-content:space-between"><strong>Быстрые действия</strong><div class="row"><button id="btnCreateVac">Создать вакансию</button><button id="btnUploadCV">Загрузить резюме</button></div></div>
+          </div>
+        </div>
+        <!-- Vacancy modal (Bootstrap) -->
+        <div class="modal fade" id="vacModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">Новая вакансия</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="vacClose"></button>
+              </div>
+              <div class="modal-body">
+                <div class="row g-3 align-items-end">
+                  <div class="col">
+                    <label class="form-label">Название</label>
+                    <input id="vacTitle" type="text" class="form-control" placeholder="Backend Developer" />
+                  </div>
+                  <div class="col-auto">
+                    <label class="form-label">Язык</label>
+                    <select id="vacLang" class="form-select"><option value="ru">RU</option><option value="en">EN</option></select>
+                  </div>
+                </div>
+                <div class="mt-3">
+                  <div class="form-text">Вариант 1: текст JD</div>
+                  <textarea id="vacText" rows="6" class="form-control" placeholder="Вставьте текст описания"></textarea>
+                </div>
+                <div class="mt-3">
+                  <div class="form-text">Вариант 2: файл (PDF/DOCX/TXT)</div>
+                  <input id="vacFile" type="file" class="form-control" accept=".pdf,.doc,.docx,.txt" />
+                </div>
+                <div id="vacMsg" class="text-danger small mt-2"></div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button id="vacSubmit" class="btn btn-primary">Создать</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Upload CV modal (Bootstrap) -->
+        <div class="modal fade" id="cvModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">Загрузка резюме</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="cvClose"></button>
+              </div>
+              <div class="modal-body">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label class="form-label">Вакансия</label>
+                    <select id="cvVac" class="form-select"></select>
+                    <div class="form-text">Под какую вакансию загружаются резюме</div>
+                  </div>
+                </div>
+                <div class="mt-2">
+                  <div class="form-text">Выберите один или несколько файлов (PDF/DOCX/TXT)</div>
+                  <input id="cvFiles" type="file" class="form-control" accept=".pdf,.doc,.docx,.txt" multiple />
+                </div>
+                <div id="cvMsg" class="text-danger small mt-2"></div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button id="cvSubmit" class="btn btn-primary">Загрузить</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="view-vacancies" hidden>
+          <div class="card row" style="justify-content:space-between"><strong id="vacTitle">Вакансии</strong><button id="btnVacNew" class="primary">Новая</button></div>
+          <div class="card">
+            <table>
+              <thead><tr><th>Вакансия</th><th>Генерация сценария</th><th>Действия</th></tr></thead>
+              <tbody id="vacTable"></tbody>
+            </table>
+          </div>
+          <div class="card" id="scenarioEditor" hidden>
+            <div class="row" style="justify-content:space-between;align-items:center">
+              <strong>Сценарий интервью</strong>
+              <div class="row small">Вакансия: <span id="scnVac">—</span>
+                <label style="margin-left:8px">Язык
+                  <select id="scnLang"><option value="ru" selected>RU</option><option value="en">EN</option></select>
+                </label>
+              </div>
+            </div>
+            <div class="row" style="align-items:flex-start;gap:12px;margin-top:8px">
+              <div style="flex:1;min-width:320px">
+                <label>Вступление</label>
+                <textarea id="scn_intro" rows="2" style="width:100%"></textarea>
+                <label style="margin-top:8px;display:block">Опыт</label>
+                <textarea id="scn_experience" rows="3" style="width:100%"></textarea>
+                <label style="margin-top:8px;display:block">Стек</label>
+                <textarea id="scn_stack" rows="3" style="width:100%"></textarea>
+                <label style="margin-top:8px;display:block">Кейсы</label>
+                <textarea id="scn_cases" rows="3" style="width:100%"></textarea>
+                <label style="margin-top:8px;display:block">Коммуникация</label>
+                <textarea id="scn_communication" rows="2" style="width:100%"></textarea>
+                <label style="margin-top:8px;display:block">Финал</label>
+                <textarea id="scn_final" rows="2" style="width:100%"></textarea>
+              </div>
+              <div style="flex:1;min-width:320px">
+                <div style="font-weight:600;margin-bottom:6px">Предпросмотр</div>
+                <div id="scnPreview" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px;min-height:180px"></div>
+                <div class="row" style="justify-content:flex-end;margin-top:8px">
+                  <button id="scnSave">Сохранить</button>
+                  <button id="scnSaveVersion" class="primary">Сохранить версию</button>
+                </div>
+                <div style="margin-top:8px">
+                  <div class="small">Версии</div>
+                  <ul id="scnVersions" style="margin:4px 0 0 16px"></ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="view-candidates" hidden>
+          <div class="card row" style="justify-content:space-between"><strong id="candTitle">Кандидаты</strong><button id="btnCVNew" class="primary">Загрузить резюме</button></div>
+          <div class="card" id="candTableWrap">
+            <div class="row" style="margin-bottom:8px">
+              <label class="row">Вакансии
+                <select id="filterVac" class="form-select" style="min-width:220px;margin-left:6px"></select>
+              </label>
+              <button id="btnApplyVacFilter" class="btn btn-outline-secondary btn-sm">Фильтр</button>
+            </div>
+            <table>
+              <thead><tr><th>Кандидат</th><th>Создано</th><th>Ссылка на собеседование</th><th>Вакансия</th><th>Соответствие</th><th>Интервью</th><th>Файл</th><th>Действия</th></tr></thead>
+              <tbody id="candTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+
+        <div id="view-profile" hidden>
+          <div class="card row" style="justify-content:space-between"><strong>Профиль кандидата</strong><button id="btnBackToList">Назад</button></div>
+          <div class="row" style="gap:12px;align-items:stretch;flex-wrap:wrap">
+            <div class="card" style="flex:1;min-width:280px">
+              <div class="row" style="justify-content:space-between"><div id="prName" style="font-weight:700">—</div><div id="prMatch" class="pill">—</div></div>
+              <div class="small" id="prPosition" style="margin-top:6px">—</div>
+              <div class="row" style="margin-top:6px;gap:6px"><span class="pill" id="prDecision">pending</span><span class="pill" id="prFlags">—</span></div>
+              <div style="margin-top:8px">
+                <div><strong>3 сильных</strong></div>
+                <ul id="prStrengths" style="margin:4px 0 0 16px"></ul>
+                <div style="margin-top:8px"><strong>3 пробела</strong></div>
+                <ul id="prGaps" style="margin:4px 0 0 16px"></ul>
+              </div>
+            </div>
+            <div class="card" style="flex:1;min-width:300px">
+              <div style="font-weight:600;margin-bottom:6px">Матрица компетенций</div>
+              <div class="row" style="gap:12px;align-items:center">
+                <div>
+                  <div class="small">Tech</div>
+                  <div id="scTech" class="pill">—</div>
+                </div>
+                <div>
+                  <div class="small">Comm</div>
+                  <div id="scComm" class="pill">—</div>
+                </div>
+                <div>
+                  <div class="small">Cases</div>
+                  <div id="scCases" class="pill">—</div>
+                </div>
+                <div>
+                  <div class="small">Total</div>
+                  <div id="scTotal" class="pill">—</div>
+                </div>
+                <button id="btnCalc" class="primary">Рассчитать оценки</button>
+              </div>
+              <div style="margin-top:12px">
+                <div class="small">Веса (tech/comm/cases)</div>
+                <div class="row" style="gap:10px">
+                  <input id="wTech" type="range" min="0" max="100" step="5" value="40" />
+                  <input id="wComm" type="range" min="0" max="100" step="5" value="30" />
+                  <input id="wCases" type="range" min="0" max="100" step="5" value="30" />
+                  <button id="btnRecompute">Пересчитать</button>
+                  <button id="btnSaveWeights" class="primary">Сохранить веса</button>
+                </div>
+                <div class="small" id="weightsHint">40/30/30</div>
+                <div class="row" style="gap:12px;margin-top:8px">
+                  <div>
+                    <div class="small">Темп (WPM)</div>
+                    <div id="spWpm" class="pill">—</div>
+                  </div>
+                  <div>
+                    <div class="small">Пауза avg</div>
+                    <div id="spPause" class="pill">—</div>
+                  </div>
+                  <div>
+                    <div class="small">Филлеры</div>
+                    <div id="spFillers" class="pill">—</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row" style="gap:12px;align-items:flex-start;flex-wrap:wrap;margin-top:8px">
+            <div class="card" style="flex:1;min-width:320px">
+              <div style="font-weight:600;margin-bottom:6px">Цитаты</div>
+              <ul id="prQuotes" style="margin:0 0 0 16px"></ul>
+              <audio id="prAudio" controls style="width:100%;margin-top:8px"></audio>
+            </div>
+            <div class="card" style="flex:2;min-width:360px">
+              <div style="font-weight:600;margin-bottom:6px">Транскрипт</div>
+              <div id="prTranscript" style="max-height:300px;overflow:auto"></div>
+            </div>
+            <div class="card" style="flex:1;min-width:300px">
+              <div class="row" style="justify-content:space-between;align-items:center"><div style="font-weight:600">История контактов</div><div class="row"><button id="btnReissue">Пере‑выдать PML</button><button id="btnCallNow">Позвонить сейчас</button><button id="btnChangeSlot">Сменить слот</button><button id="btnPrescreen">Прескрининг</button></div></div>
+              <ul id="prContacts" style="margin:8px 0 0 16px"></ul>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <script>
+      // Bootstrap skin for controls
+      function skinBootstrap(){
+        try{
+          document.querySelectorAll('button').forEach(btn=>{
+            btn.classList.add('btn');
+            if(btn.classList.contains('primary')){ btn.classList.add('btn-primary'); }
+            else if(btn.classList.contains('dangerBtn')){ btn.classList.add('btn-danger'); }
+            else if(!/\bbtn-([a-z]+)\b/.test(btn.className)){ btn.classList.add('btn-outline-secondary'); }
+          });
+          document.querySelectorAll('input:not([type="checkbox"]):not([type="range"])').forEach(i=> i.classList.add('form-control'));
+          document.querySelectorAll('select').forEach(i=> i.classList.add('form-select'));
+          document.querySelectorAll('input[type="range"]').forEach(i=> i.classList.add('form-range'));
+          document.querySelectorAll('input[type="checkbox"]').forEach(i=> i.classList.add('form-check-input'));
+          document.querySelectorAll('textarea').forEach(i=> i.classList.add('form-control'));
+        }catch{}
+      }
+      // Simple auth overlay
+      const overlay = document.getElementById('loginOverlay');
+      const loginUser = document.getElementById('loginUser');
+      const loginPass = document.getElementById('loginPass');
+      const btnLogin = document.getElementById('btnLogin');
+      const loginMsg = document.getElementById('loginMsg');
+      let authReady = false;
+      function showOverlay(on){ overlay.style.display = on ? 'flex' : 'none'; }
+      async function tryVerify(){
+        const token = localStorage.getItem('hrToken')||'';
+        if(!token){ showOverlay(true); return false; }
+        try{
+          const res = await fetch('/api/auth/verify', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token }) });
+          if(res.ok){ showOverlay(false); authReady = true; afterAuthInit(); return true; }
+        }catch{}
+        showOverlay(true); authReady = false; return false;
+      }
+      btnLogin?.addEventListener('click', async ()=>{
+        loginMsg.textContent='';
+        try{
+          const res = await fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: loginUser.value||'admin', password: loginPass.value||'admin' }) });
+          const text = await res.text();
+          let data = null; try{ data = JSON.parse(text); }catch{}
+          if(!res.ok || !data){ loginMsg.textContent = (data?.detail) || (text?.slice(0,200)||'Ошибка входа'); return; }
+          localStorage.setItem('hrToken', data.token||''); showOverlay(false); authReady = true; afterAuthInit();
+        }catch(err){ loginMsg.textContent = err?.message||String(err); }
+      });
+      
+      // Logout handler
+      const logoutBtn = document.getElementById('lnkLogout');
+      logoutBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        console.log('Logout button clicked!');
+        // Удаляем токен
+        localStorage.removeItem('hrToken');
+        // Сбрасываем флаг авторизации
+        authReady = false;
+        // Показываем форму логина
+        showOverlay(true);
+        // Очищаем поля логина
+        loginUser.value = '';
+        loginPass.value = '';
+        loginMsg.textContent = '';
+        // Переходим на dashboard
+        location.hash = '#dashboard';
+      });
+      
+      const views = {
+        dashboard: document.getElementById('view-dashboard'),
+        vacancies: document.getElementById('view-vacancies'),
+        candidates: document.getElementById('view-candidates'),
+        profile: document.getElementById('view-profile'),
+      };
+      const links = {
+        dashboard: document.getElementById('lnkDash'),
+        vacancies: document.getElementById('lnkVac'),
+        candidates: document.getElementById('lnkCand'),
+      };
+      function setView(name){
+        for(const k in views){ 
+          if(views[k]) views[k].hidden = (k!==name); 
+          if(links[k]) links[k].classList.toggle('active', k===name); 
+        }
+        location.hash = name;
+      }
+      window.addEventListener('hashchange', ()=>{ const h = (location.hash||'#dashboard').slice(1); if(views[h]) setView(h); if(!authReady) return; if(h==='dashboard') loadKpi(); if(h==='vacancies'){ loadVacancies(); startVacAutoPoll(); } if(h==='candidates'){ loadVacancies(); loadCandidates(); startCandidatesAuto(); } });
+      setView((location.hash||'#dashboard').slice(1) || 'dashboard');
+
+      // i18n
+      const uiLangSel = document.getElementById('uiLang');
+      const tr = {
+        ru: {
+          hdr: 'HR‑админка',
+          nav: { dashboard:'Дэшборд', vacancies:'Вакансии', candidates:'Кандидаты', invites:'Приглашения', settings:'Настройки' },
+          m1:'Обработано сегодня', m2:'Ср. время до решения', m3:'% допусков', m4:'В эфире сейчас',
+          events:'События', createVac:'Создать вакансию', uploadCV:'Загрузить резюме', invite:'Пригласить',
+          vacTitle:'Вакансии', candTitle:'Кандидаты', invTitle:'Приглашения', setTitle:'Настройки', vacNew:'Новая', import:'Импорт', filters:'Фильтры'
+        },
+        en: {
+          hdr: 'HR Admin',
+          nav: { dashboard:'Dashboard', vacancies:'Vacancies', candidates:'Candidates', invites:'Invites', settings:'Settings' },
+          m1:'Processed today', m2:'Avg. time to decision', m3:'% passes', m4:'Live now',
+          events:'Events', createVac:'Create vacancy', uploadCV:'Upload resume', invite:'Invite',
+          vacTitle:'Vacancies', candTitle:'Candidates', invTitle:'Invites', setTitle:'Settings', vacNew:'New', import:'Import', filters:'Filters'
+        }
+      };
+      function applyI18n(){
+        const l = uiLangSel.value; const t = tr[l]||tr.ru; document.documentElement.lang = l;
+        const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+        setText('hdrTitle', t.hdr);
+        links.dashboard.textContent = t.nav.dashboard; links.vacancies.textContent = t.nav.vacancies; links.candidates.textContent = t.nav.candidates;
+        // KPI подписи показываются как small без id — пропускаем
+        // Обновляем тексты кнопок и заголовков, если элементы есть
+        setText('btnCreateVac', t.createVac); setText('btnUploadCV', t.uploadCV);
+        setText('vacTitle', t.vacTitle); setText('btnVacNew', t.vacNew);
+        setText('candTitle', t.candTitle);
+      }
+      const savedUi = localStorage.getItem('uiLang') || '';
+      uiLangSel.value = savedUi || ((navigator.language||'ru').startsWith('ru')?'ru':'en');
+      applyI18n(); skinBootstrap();
+      uiLangSel.addEventListener('change', ()=>{ localStorage.setItem('uiLang', uiLangSel.value); applyI18n(); });
+
+      // Dashboard KPIs
+      async function loadKpi(){ if(!authReady) return;
+        try{
+          const r = await fetch('/api/stats'); const s = await r.json();
+          document.getElementById('kpiTotal').textContent = s.candidates_total ?? '0';
+          document.getElementById('kpiPassed').textContent = s.candidates_passed ?? '0';
+          document.getElementById('kpiInv').textContent = s.invites_total ?? '0';
+          document.getElementById('kpiSlots').textContent = s.slots_booked ?? '0';
+        }catch{}
+      }
+      // SSE metrics subscribe
+      (function initSse(){ try{
+        const sparkT = document.getElementById('sparkTtfb'); const sparkB = document.getElementById('sparkBarge'); if(!sparkT||!sparkB) return;
+        const maxBars = 60; const dataT=[]; const dataB=[];
+        function render(container, arr, maxv){ container.innerHTML=''; const max = Math.max(1, maxv||Math.max(...arr,1)); arr.forEach(v=>{ const b=document.createElement('div'); b.style.width='2px'; b.style.background='#1c7ed6'; b.style.height = Math.max(2, Math.round((v/max)*40))+'px'; container.appendChild(b); }); }
+        // Invite events list
+        const invList = document.getElementById('invEventsList'); const invCount = document.getElementById('invEvCount'); const invArr=[]; const invMax=100;
+        function pushInviteEv(d){ const dt=new Date(d.ts||Date.now()); const line=`${dt.toLocaleString()} · ${d.name} · ${d.va||d.vacancy||''} ${d.cid?('· cid '+d.cid):''}`; const div=document.createElement('div'); div.className='small'; div.textContent=line; invArr.unshift(div); if(invArr.length>invMax) invArr.pop(); invList.innerHTML=''; invArr.forEach(x=> invList.appendChild(x)); invCount.textContent=String(invArr.length); }
+        const es = new EventSource('/api/metrics/stream');
+        es.onmessage = (ev)=>{
+          try{
+            const d = JSON.parse(ev.data||'{}');
+            if(d.name==='tts_ttfb_ms'){ dataT.push(Number(d.ms)||0); if(dataT.length>maxBars) dataT.shift(); render(sparkT, dataT, 1500); }
+            if(d.name==='barge_in_ms'){ dataB.push(Number(d.ms)||0); if(dataB.length>maxBars) dataB.shift(); render(sparkB, dataB, 5000); }
+            if(d.name==='invite_opened' || d.name==='clicked' || d.name==='slot_booked'){ pushInviteEv(d); }
+          }catch{}
+        };
+      }catch{} })();
+      // defer first load until auth
+      const vacT = document.getElementById('vacTable');
+      let vacPollTimer = null;
+      function startVacAutoPoll(force){ if(vacPollTimer && !force) return; if(vacPollTimer){ clearInterval(vacPollTimer); }
+        vacPollTimer = setInterval(()=>{ if(location.hash==='#vacancies'){ loadVacancies(); } else { clearInterval(vacPollTimer); vacPollTimer=null; } }, 2000);
+      }
+      async function loadVacancies(){ if(!authReady) return;
+        try{
+          vacT.innerHTML='';
+          const r = await fetch('/api/vacancies'); const d = await r.json();
+          try{ const sel=document.getElementById('filterVac'); if(sel){ sel.innerHTML='<option value="">Все</option>'; (d.items||[]).forEach(v=>{ const o=document.createElement('option'); o.value=String(v.id); o.textContent=v.title; sel.appendChild(o); }); } }catch{}
+          let anyPending = false;
+          const taskMap = (()=>{ try{ return JSON.parse(localStorage.getItem('vacTasks')||'{}'); }catch{ return {}; } })();
+          const lastProgress = (()=>{ try{ return JSON.parse(localStorage.getItem('vacProgress')||'{}'); }catch{ return {}; } })();
+          const openedOnce = (()=>{ try{ return JSON.parse(localStorage.getItem('vacOpenedOnce')||'{}'); }catch{ return {}; } })();
+          (d?.items||[]).forEach(v=>{
+            const tr=document.createElement('tr');
+            const actions = `<div class="btn-group" role="group">
+                <a class="btn btn-primary" href="/vacancy.html?id=${v.id}">Редактировать</a>
+                <button class="btn btn-outline-danger btnVacDelete" data-id="${v.id}">Удалить</button>
+              </div>`;
+            let statusHtml = '<span class="badge bg-success">готово</span>';
+            if(!v.has_scenario){
+              const tid = (v.task_id || taskMap[String(v.id)]) || null;
+              if(v.task_id && !taskMap[String(v.id)]){ taskMap[String(v.id)] = v.task_id; localStorage.setItem('vacTasks', JSON.stringify(taskMap)); }
+              if(tid){
+                const lp = Math.max(0, Math.min(100, Number(lastProgress[String(v.id)]||0)));
+                statusHtml = `<div class="progress" style="height: 20px; position: relative" data-progress="${v.id}">
+                  <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width:${lp}%; transition: width 0.5s ease"></div>
+                </div>`;
+              } else {
+                statusHtml = '<span class="small text-muted">генерация…</span>';
+              }
+            }
+            if(!v.has_scenario) anyPending = true;
+            tr.innerHTML=`<td>${v.title}</td><td>${statusHtml}</td><td>${actions}</td>`;
+            vacT.appendChild(tr);
+          });
+          // query task progress for rows with data-progress
+          const progressEls = Array.from(document.querySelectorAll('[data-progress]'));
+          for(const el of progressEls){
+            const vid = el.getAttribute('data-progress'); const tid = taskMap[String(vid)]; if(!tid) continue;
+            try{
+              const pr = await fetch(`/api/tasks/${encodeURIComponent(tid)}`);
+              const tj = await pr.json();
+              if(pr.ok){
+                if(tj.ok){
+                  // finalize visually to 100% and confirm scenario presence before cleanup
+                  const bar = el.querySelector('.progress-bar');
+                  if(bar){ bar.style.width = '100%'; }
+                  lastProgress[String(vid)] = 100; localStorage.setItem('vacProgress', JSON.stringify(lastProgress));
+                  try{
+                    const r2 = await fetch(`/api/vacancies/${encodeURIComponent(vid)}/scenario`);
+                    const d2 = await r2.json();
+                    const scen = (d2 && d2.scenario) || {};
+                    const has = ['intro','experience','stack','cases','communication','final'].some(k=> (scen?.[k]||'').trim().length>0);
+                    if(has){
+                      el.innerHTML = '<span class="badge bg-success">готово</span>';
+                      delete taskMap[String(vid)]; localStorage.setItem('vacTasks', JSON.stringify(taskMap));
+                      delete lastProgress[String(vid)]; localStorage.setItem('vacProgress', JSON.stringify(lastProgress));
+                      if(!openedOnce[String(vid)]){
+                        await openScenario(Number(vid), (d.items||[]).find(x=>x.id===Number(vid))?.title||('Vacancy '+vid));
+                        openedOnce[String(vid)] = true; localStorage.setItem('vacOpenedOnce', JSON.stringify(openedOnce));
+                      }
+                    }
+                  }catch{/* ignore and let next poll confirm */}
+                } else {
+                  const p = (typeof tj.progress === 'number') ? Math.max(0, Math.min(100, tj.progress)) : null;
+                  const bar = el.querySelector('.progress-bar');
+                  if(bar && p!=null){
+                    const prev = Number(lastProgress[String(vid)]||0);
+                    const next = Math.max(prev, p); // never go backwards visually
+                    bar.style.width = next+'%';
+                    lastProgress[String(vid)] = next; localStorage.setItem('vacProgress', JSON.stringify(lastProgress));
+                  }
+                }
+              }
+            }catch{}
+          }
+          if(anyPending || progressEls.length>0){ startVacAutoPoll(); } else { if(vacPollTimer){ clearInterval(vacPollTimer); vacPollTimer=null; } }
+          document.querySelectorAll('.btnVacDelete').forEach(b=> b.addEventListener('click', async ()=>{
+            const id=b.getAttribute('data-id'); if(!confirm('Удалить вакансию?')) return;
+            try{ const r=await fetch(`/api/vacancies/${encodeURIComponent(id)}`, { method:'DELETE' }); if(!r.ok){ const d=await r.json(); throw new Error(d?.detail||r.status); } await loadVacancies(); }catch(err){ alert('Ошибка: '+(err?.message||String(err))); }
+          }));
+        }catch{}
+      }
+
+      // kick off auth verification after handlers are ready
+      function afterAuthInit(){ try{ const h=(location.hash||'#dashboard').slice(1); if(h==='dashboard') loadKpi(); if(h==='vacancies'){ loadVacancies(); startVacAutoPoll(); } }catch{} }
+      
+      tryVerify();
+      const candT = document.getElementById('candTable');
+      async function loadCandidates(){
+        candT.innerHTML = '<tr><td colspan="4"><div class="skel"><div class="skel-line" style="width:40%"></div><div class="skel-line" style="width:60%"></div></div></td></tr>';
+        try{
+          const vacFilter = (document.getElementById('filterVac')?.value||'').trim();
+          const qs = vacFilter? ('?vacancy_id='+encodeURIComponent(vacFilter)) : '';
+          const r = await fetch('/api/candidates'+qs); const d = await r.json();
+          candT.innerHTML='';
+          (d.items||[]).forEach(c=>{
+            const pml = c.pml_url || `/i/CV/start?cid=${encodeURIComponent(c.id)}`; // персональная ссылка, если уже создана
+            const actions = `<div class="btn-group" role="group">
+                <a class="btn btn-primary btnView" data-id="${c.id}" href="#">Просмотр</a>
+                <button class="btn btn-outline-danger btnDel" data-id="${c.id}">Удалить</button>
+              </div>`;
+            const tr = document.createElement('tr'); tr.setAttribute('data-cid', String(c.id)); tr.setAttribute('data-status', c.status||'ready');
+            const fileBtn = `<a class=\"btn btn-outline-secondary btn-sm\" href=\"/api/upload/cv/file/${encodeURIComponent(c.id)}\" target=\"_blank\">Скачать</a>`;
+            const linkHtml = `<span class="small" style="word-break:break-all">${pml}</span> <button class="btn btn-sm btn-outline-secondary btnCopy" data-link="${pml}">Копировать</button>`;
+            const vacTitle = c.vacancy_title || (c.vacancy_id? ('#'+c.vacancy_id) : '—');
+            const matchPct = (c.status==='processing')? 'в обработке' : ((typeof c.match_pct==='number')? Math.round(c.match_pct*100)+'%' : '—');
+            const disabled = (c.status==='processing');
+            
+            // Проверяем статус интервью
+            let interviewStatus = '';
+            if (c.interview_completed) {
+              if (c.interview_passed) {
+                interviewStatus = '<span class="badge bg-success">Прошел</span>';
+              } else {
+                interviewStatus = '<span class="badge bg-warning">Не прошел</span>';
+              }
+              if (c.interview_score) {
+                interviewStatus += ` <small class="text-muted">${c.interview_score}%</small>`;
+              }
+            } else {
+              interviewStatus = '<span class="badge bg-secondary">Не проходил</span>';
+            }
+            
+            tr.innerHTML = `<td><a href="#" data-cid="${c.id}">${c.name||'—'}</a></td><td>${new Date(c.created_at).toLocaleString()}</td><td>${linkHtml}</td><td class="cell-vac">${vacTitle}</td><td class="cell-match">${matchPct}</td><td>${interviewStatus}</td><td>${fileBtn}</td><td>${actions}</td>`;
+            if(disabled){ tr.querySelectorAll('.btnView,.btnDel').forEach(b=>{ b.setAttribute('disabled','true'); b.classList.add('disabled'); }); const st=document.createElement('div'); st.className='small text-muted proc-note'; st.textContent='в обработке'; tr.querySelector('td:last-child').appendChild(st); }
+            candT.appendChild(tr);
+          });
+          document.querySelectorAll('#candTable a[data-cid]').forEach(a=>{ a.addEventListener('click', (e)=>{ e.preventDefault(); const cid=a.getAttribute('data-cid'); openProfile(cid); }); });
+          document.querySelectorAll('#candTable .btnCopy').forEach(b=> b.addEventListener('click', ()=>{ const ln=b.getAttribute('data-link')||''; navigator.clipboard?.writeText(location.origin+ln).then(()=>{ b.textContent='Скопировано'; setTimeout(()=> b.textContent='Копировать', 1200); }); }));
+          document.querySelectorAll('#candTable .btnView').forEach(b=> b.addEventListener('click', async (e)=>{ e.preventDefault(); const id=b.getAttribute('data-id'); window.open(`/resume.html?id=${id}`, '_blank'); }));
+          document.querySelectorAll('#candTable .btnDel').forEach(b=> b.addEventListener('click', async ()=>{ const id=b.getAttribute('data-id'); if(!confirm('Удалить кандидата?')) return; try{ const r=await fetch(`/api/candidates/${encodeURIComponent(id)}`, { method:'DELETE' }); if(!r.ok){ const d=await r.json(); throw new Error(d?.detail||r.status); } await loadCandidates(); }catch(err){ alert('Ошибка: '+(err?.message||String(err))); } }));
+          startCandidatesAuto();
+        }catch{ candT.innerHTML=''; }
+      }
+      loadCandidates();
+      let candPollTimer=null;
+      async function pollCandidatesOnce(){
+        try{
+          const vacFilter = (document.getElementById('filterVac')?.value||'').trim();
+          const qs = vacFilter? ('?vacancy_id='+encodeURIComponent(vacFilter)) : '';
+          const r = await fetch('/api/candidates'+qs); const d = await r.json();
+          const byId = {}; (d.items||[]).forEach(c=> byId[String(c.id)] = c);
+          document.querySelectorAll('#candTable tr[data-cid]').forEach(tr=>{
+            const cid = tr.getAttribute('data-cid'); const cur = byId[cid]; if(!cur) return;
+            const st = tr.getAttribute('data-status');
+            if(st==='processing' && cur.status!=='processing'){
+              tr.setAttribute('data-status','ready');
+              const vacCell = tr.querySelector('.cell-vac'); if(vacCell){ vacCell.textContent = cur.vacancy_title || (cur.vacancy_id? ('#'+cur.vacancy_id):'—'); }
+              const matchCell = tr.querySelector('.cell-match'); if(matchCell){ matchCell.textContent = (typeof cur.match_pct==='number')? (Math.round(cur.match_pct*100)+'%') : '—'; }
+              tr.querySelectorAll('.btnView,.btnDel').forEach(b=>{ b.removeAttribute('disabled'); b.classList.remove('disabled'); });
+              const note = tr.querySelector('.proc-note'); if(note){ note.remove(); }
+            }
+          });
+          // stop timer if нет больше processing
+          const anyProcNow = Array.from(document.querySelectorAll('#candTable tr[data-cid]')).some(tr=> tr.getAttribute('data-status')==='processing');
+          if(!anyProcNow && candPollTimer){ clearInterval(candPollTimer); candPollTimer=null; }
+        }catch{}
+      }
+      function startCandidatesAuto(){
+        const anyProc = Array.from(document.querySelectorAll('#candTable tr[data-cid]')).some(tr=> tr.getAttribute('data-status')==='processing');
+        if(anyProc){ if(candPollTimer) clearInterval(candPollTimer); candPollTimer = setInterval(pollCandidatesOnce, 3000); }
+        else { if(candPollTimer){ clearInterval(candPollTimer); candPollTimer=null; } }
+      }
+      document.getElementById('btnApplyVacFilter')?.addEventListener('click', ()=> loadCandidates());
+      // Автоматически обновляем кандидатов при изменении выбора вакансии
+      document.getElementById('filterVac')?.addEventListener('change', ()=> loadCandidates());
+      // Код для invTable удален, так как секция приглашений была удалена
+      // const invT = document.getElementById('invTable');
+      // [['Сидорова А.А.','PML','отправлено','/i/VA123/abc'],['Smith J.','UVL+код','клик','/v/VA123']].forEach(x=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${x[0]}</td><td>${x[1]}</td><td>${x[2]}</td><td><a href="${x[3]}">${x[3]}</a></td><td><button class="btnReissue">Пере‑выдать</button> <button class="btnRemind">Почта</button> <button class="btnSms">SMS</button> <button class="btnTg">Telegram</button></td>`; invT.appendChild(tr); });
+
+      // Candidate profile navigation
+      const viewProfile = document.getElementById('view-profile');
+      const btnBackToList = document.getElementById('btnBackToList');
+      function openProfile(cid){ setView('profile'); loadProfile(cid); }
+      document.querySelectorAll('#candTable a[data-cid]').forEach(a=>{ a.addEventListener('click', (e)=>{ e.preventDefault(); const cid=a.getAttribute('data-cid'); openProfile(cid); }); });
+      btnBackToList?.addEventListener('click', ()=> setView('candidates'));
+
+      async function loadProfile(cid){
+        // skeletons
+        document.getElementById('prName').textContent='';
+        document.getElementById('prPosition').textContent='';
+        document.getElementById('prMatch').textContent='';
+        document.getElementById('prStrengths').innerHTML='<div class="skel"><div class="skel-line" style="width:70%"></div><div class="skel-line" style="width:50%"></div></div>';
+        document.getElementById('prGaps').innerHTML='<div class="skel"><div class="skel-line" style="width:60%"></div><div class="skel-line" style="width:40%"></div></div>';
+        try{
+          const res = await fetch(`/api/candidates/${encodeURIComponent(cid)}`);
+          const data = await res.json();
+          if(!res.ok){ alert('Ошибка загрузки профиля: '+(data?.detail||res.status)); return; }
+          document.getElementById('prName').textContent = data?.summary?.name || '—';
+          document.getElementById('prPosition').textContent = data?.summary?.position || '—';
+          document.getElementById('prDecision').textContent = data?.summary?.decision || 'pending';
+          document.getElementById('prFlags').textContent = (data?.flags||[]).join(', ') || '—';
+          document.getElementById('prMatch').textContent = Math.round((data?.summary?.match_pct||0)*100)+'%';
+          // strengths/gaps
+          const sUl = document.getElementById('prStrengths'); sUl.innerHTML=''; (data?.summary?.strengths||[]).forEach(s=>{ const li=document.createElement('li'); li.textContent=s; sUl.appendChild(li); });
+          const gUl = document.getElementById('prGaps'); gUl.innerHTML=''; (data?.summary?.gaps||[]).forEach(s=>{ const li=document.createElement('li'); li.textContent=s; gUl.appendChild(li); });
+          // scores
+          document.getElementById('scTech').textContent = Math.round(((data?.scores?.by_comp?.tech)||0)*100)+'%';
+          document.getElementById('scComm').textContent = Math.round(((data?.scores?.by_comp?.comm)||0)*100)+'%';
+          document.getElementById('scCases').textContent = Math.round(((data?.scores?.by_comp?.cases)||0)*100)+'%';
+          document.getElementById('scTotal').textContent = Math.round(((data?.scores?.total)||0)*100)+'%';
+          // speech metrics
+          const sm = (data?.speech_metrics) || (data?.summary?.speech_metrics) || (data?.speech)||{};
+          document.getElementById('spWpm').textContent = (sm.wpm!=null)? String(sm.wpm): '—';
+          document.getElementById('spPause').textContent = (sm.avg_pause_ms!=null)? (sm.avg_pause_ms+' ms') : '—';
+          document.getElementById('spFillers').textContent = (sm.fillers!=null)? String(sm.fillers): '—';
+          // transcript
+          const trC = document.getElementById('prTranscript'); trC.innerHTML='';
+          if((data?.transcript||[]).length===0){ const emp=document.createElement('div'); emp.className='empty'; emp.textContent='Транскрипт отсутствует'; trC.appendChild(emp); } else {
+            const jdkw = (data?.jd_keywords||[]).map(s=>String(s||'')).filter(Boolean);
+            const esc = (s)=> s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const rx = jdkw.length? new RegExp('('+jdkw.map(esc).join('|')+')','gi') : null;
+            (data?.transcript||[]).forEach(row=>{ const div=document.createElement('div'); div.className='row'; const who=document.createElement('span'); who.className='pill'; who.textContent=(row.role||'').slice(0,1); const text=document.createElement('span'); const raw = String(row.text||''); text.innerHTML = rx? raw.replace(rx, '<mark>$1</mark>') : raw; div.appendChild(who); div.appendChild(text); trC.appendChild(div); });
+          }
+          // quotes with audio
+          const qUl = document.getElementById('prQuotes'); qUl.innerHTML=''; const player=document.getElementById('prAudio');
+          (data?.quotes||[]).forEach(q=>{ const li=document.createElement('li'); const a=document.createElement('a'); a.href='#'; a.textContent = q.text||''; a.addEventListener('click', (e)=>{ e.preventDefault(); player.src = q.url || ''; try{ player.play(); }catch{} }); li.appendChild(a); qUl.appendChild(li); });
+
+          // contacts history
+          await loadContacts(Number(cid));
+
+          // weights change
+          const wTech=document.getElementById('wTech'), wComm=document.getElementById('wComm'), wCases=document.getElementById('wCases'), hint=document.getElementById('weightsHint');
+          function upd(){ hint.textContent = `${wTech.value}/${wComm.value}/${wCases.value}`; }
+          [wTech,wComm,wCases].forEach(i=> i.addEventListener('input', upd)); upd();
+          document.getElementById('btnRecompute').addEventListener('click', ()=>{ doCalcScores(cid); });
+          document.getElementById('btnCalc').addEventListener('click', ()=>{ doCalcScores(cid); });
+          // Load vacancy weights if vacancy_id parsed
+          try{
+            const vacId = (document.getElementById('scnVac').textContent||'').split('(').pop().replace(/\)|\s/g,'');
+            if(vacId){ const r=await fetch(`/api/vacancies/${encodeURIComponent(vacId)}/weights`); const d=await r.json(); if(r.ok){ wTech.value=String(Math.round((d.tech||0)*100)); wComm.value=String(Math.round((d.comm||0)*100)); wCases.value=String(Math.round((d.cases||0)*100)); upd(); } }
+          }catch{}
+          document.getElementById('btnSaveWeights').addEventListener('click', async ()=>{
+            try{
+              const vacId = (document.getElementById('scnVac').textContent||'').split('(').pop().replace(/\)|\s/g,'');
+              if(!vacId){ alert('Не определена вакансия'); return; }
+              const body = { tech: Number(wTech.value), comm: Number(wComm.value), cases: Number(wCases.value) };
+              const r = await fetch(`/api/vacancies/${encodeURIComponent(vacId)}/weights`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+              const d = await r.json(); if(!r.ok){ alert('Ошибка сохранения: '+(d?.detail||r.status)); return; }
+              alert('Веса сохранены');
+            }catch(err){ alert('Ошибка: '+(err?.message||String(err))); }
+          });
+          // quick actions
+          document.getElementById('btnReissue').addEventListener('click', async ()=>{ await addContact(Number(cid), 'pml_issued', {}); await loadContacts(Number(cid)); alert('Ссылка пере‑выдана (лог)'); });
+          document.getElementById('btnCallNow').addEventListener('click', async ()=>{
+            try{
+              const phone = prompt('Номер телефона кандидата (E.164):');
+              if(!phone) return;
+              const res = await fetch('/api/voip/call', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ candidate_id: Number(cid), phone_to: phone }) });
+              const data = await res.json();
+              if(!res.ok){ alert('Ошибка звонка: '+(data?.detail||res.status)); return; }
+              await addContact(Number(cid), 'call_initiated', { call_id: data.call_id });
+              await loadContacts(Number(cid));
+              alert('Звонок инициирован: '+data.call_id+' (симуляция/провайдер)');
+            }catch(err){ alert('Ошибка: '+(err?.message||String(err))); }
+          });
+          document.getElementById('btnChangeSlot').addEventListener('click', async ()=>{ await addContact(Number(cid), 'slot_changed', {}); await loadContacts(Number(cid)); alert('Слот изменён (лог)'); });
+          document.getElementById('btnPrescreen').addEventListener('click', async ()=>{
+            try{
+              const callId = prompt('ID звонка для прескрининга (если уже создан):');
+              if(!callId) return;
+              const res = await fetch('/api/voip/prescreen/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ call_id: Number(callId) }) });
+              const data = await res.json();
+              if(!res.ok){ alert('Ошибка прескрининга: '+(data?.detail||res.status)); return; }
+              alert('Прескрининг: '+(data.prompt||'')+' (ожидается DTMF)');
+              await loadContacts(Number(cid));
+            }catch(err){ alert('Ошибка: '+(err?.message||String(err))); }
+          });
+        }catch(err){ alert('Ошибка: '+(err?.message||String(err))); }
+      }
+
+      async function loadContacts(cid){
+        try{
+          const res = await fetch(`/api/contacts/${cid}`);
+          const data = await res.json();
+          const ul = document.getElementById('prContacts'); ul.innerHTML='';
+          (data?.items||[]).forEach(e=>{ const li=document.createElement('li'); li.textContent = `${new Date(e.created_at).toLocaleString()} · ${e.type}`; ul.appendChild(li); });
+        }catch(err){ /* noop */ }
+      }
+
+      async function addContact(cid, type, meta){
+        try{
+          await fetch('/api/contacts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ candidate_id: cid, type, meta }) });
+        }catch(err){ /* noop */ }
+      }
+
+      async function doCalcScores(cid){
+        try{
+          const wTech=document.getElementById('wTech'), wComm=document.getElementById('wComm'), wCases=document.getElementById('wCases');
+          const weights={ tech: Number(wTech.value)/100, comm: Number(wComm.value)/100, cases: Number(wCases.value)/100 };
+          const vac = (document.getElementById('scnVac').textContent||'').split('(').pop().replace(/\)|\s/g,'');
+          const body = { candidate_id: Number(cid), vacancy_id: vac ? Number(vac.replace(/\D/g,'')) : undefined, weights };
+          const res = await fetch('/api/analysis/score', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+          const data = await res.json();
+          if(!res.ok){ alert('Ошибка расчета: '+(data?.detail||res.status)); return; }
+          document.getElementById('scTech').textContent = Math.round((data.tech||0)*100)+'%';
+          document.getElementById('scComm').textContent = Math.round((data.comm||0)*100)+'%';
+          document.getElementById('scCases').textContent = Math.round((data.cases||0)*100)+'%';
+          document.getElementById('scTotal').textContent = Math.round((data.total||0)*100)+'%';
+        }catch(err){ alert('Ошибка: '+(err?.message||String(err))); }
+      }
+
+      // Kanban logic (drag & drop)
+      // Kanбан убран по требованию (минимальный список кандидатов)
+
+      // Scenario editor logic (local state)
+      const scen = {
+        root: document.getElementById('scenarioEditor'), vac: document.getElementById('scnVac'), lang: document.getElementById('scnLang'),
+        intro: document.getElementById('scn_intro'), experience: document.getElementById('scn_experience'), stack: document.getElementById('scn_stack'), cases: document.getElementById('scn_cases'), communication: document.getElementById('scn_communication'), final: document.getElementById('scn_final'),
+        preview: document.getElementById('scnPreview'), save: document.getElementById('scnSave'), saveVersion: document.getElementById('scnSaveVersion'), versions: document.getElementById('scnVersions')
+      };
+      async function openScenario(vacId, title){ setView('vacancies'); scen.root.hidden=false; scen.vac.textContent = `${title} (${vacId})`;
+        try{ const r=await fetch(`/api/vacancies/${encodeURIComponent(vacId)}/scenario`); const d=await r.json(); if(r.ok && d?.scenario){ ['intro','experience','stack','cases','communication','final'].forEach(f=>{ scen[f].value = d.scenario[f]||''; }); } }catch{}
+        updatePreview(); }
+      function updatePreview(){ const t=(s)=> (s||'').trim(); const lang=scen.lang.value; const map = { ru: { intro:'Вступление', experience:'Опыт', stack:'Стек', cases:'Кейсы', communication:'Коммуникация', final:'Финал' }, en: { intro:'Intro', experience:'Experience', stack:'Stack', cases:'Cases', communication:'Communication', final:'Closing' } }[lang]; scen.preview.innerHTML = '';
+        [['intro','intro'],['experience','experience'],['stack','stack'],['cases','cases'],['communication','communication'],['final','final']].forEach(([field, label])=>{ const val=t(scen[field].value); if(!val) return; const h=document.createElement('div'); h.className='small'; h.style.marginTop='6px'; h.textContent = map[label]; const p=document.createElement('div'); p.textContent = val; scen.preview.appendChild(h); scen.preview.appendChild(p); }); }
+      scen.lang.addEventListener('change', ()=>{ updatePreview(); });
+      ;['intro','experience','stack','cases','communication','final'].forEach(f=>{ scen[f].addEventListener('input', updatePreview); });
+      scen.save.addEventListener('click', async ()=>{ const vac = (scen.vac.textContent||'').split('(').pop().replace(/\)|\s/g,''); const body = { intro:scen.intro.value, experience:scen.experience.value, stack:scen.stack.value, cases:scen.cases.value, communication:scen.communication.value, final:scen.final.value, save_version:false }; try{ const r=await fetch(`/api/vacancies/${encodeURIComponent(vac)}/scenario`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); const d=await r.json(); if(!r.ok) throw new Error(d?.detail||r.status); alert('Сохранено'); }catch(err){ alert('Ошибка: '+(err?.message||String(err))); } });
+      scen.saveVersion.addEventListener('click', async ()=>{ const vac = (scen.vac.textContent||'').split('(').pop().replace(/\)|\s/g,''); const body = { intro:scen.intro.value, experience:scen.experience.value, stack:scen.stack.value, cases:scen.cases.value, communication:scen.communication.value, final:scen.final.value, save_version:true }; try{ const r=await fetch(`/api/vacancies/${encodeURIComponent(vac)}/scenario`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); const d=await r.json(); if(!r.ok) throw new Error(d?.detail||r.status); renderVersions(); alert('Версия сохранена'); }catch(err){ alert('Ошибка: '+(err?.message||String(err))); } });
+      async function renderVersions(){ const vac = (scen.vac.textContent||'').split('(').pop().replace(/\)|\s/g,''); try{ const r=await fetch(`/api/vacancies/${encodeURIComponent(vac)}/scenario`); const d=await r.json(); const ver=d?.versions||[]; scen.versions.innerHTML=''; ver.forEach((v,i)=>{ const li=document.createElement('li'); const a=document.createElement('a'); a.href='#'; a.textContent = `${i+1}) ${new Date(v.date||Date.now()).toLocaleString()}`; a.addEventListener('click', (e)=>{ e.preventDefault(); const data=v.data||{}; ['intro','experience','stack','cases','communication','final'].forEach(f=> scen[f].value = data[f]||''); updatePreview(); }); li.appendChild(a); scen.versions.appendChild(li); }); }catch{ scen.versions.innerHTML=''; }
+      }
+      document.querySelectorAll('.btnScenario').forEach(b=> b.addEventListener('click', ()=>{ openScenario(b.getAttribute('data-vac'), b.getAttribute('data-title')); renderVersions(); }));
+
+     
+      (function initInviteWizard(){
+        const root = document.getElementById('inviteWizard'); if(!root) return;
+        const stepLbl = document.getElementById('wizStep');
+        const s1 = document.getElementById('wizStep1'); const s2 = document.getElementById('wizStep2'); const s3 = document.getElementById('wizStep3');
+        const vac = document.getElementById('wizVac'); const candList = document.getElementById('wizCandList');
+        const next1 = document.getElementById('wizNext1'); const back2 = document.getElementById('wizBack2'); const next2 = document.getElementById('wizNext2'); const back3 = document.getElementById('wizBack3'); const submit = document.getElementById('wizSubmit');
+        const modePml = document.getElementById('modePml'); const modeUvl = document.getElementById('modeUvl'); const modeSch = document.getElementById('modeScheduler');
+        const slotsWrap = document.getElementById('wizSlotsWrap'); const slots = document.getElementById('wizSlots');
+        const result = document.getElementById('wizResult');
+        let step = 1;
+        function show(n){ step=n; stepLbl.textContent=String(n); s1.hidden=n!==1; s2.hidden=n!==2; s3.hidden=n!==3; }
+        // seed
+        ['VA123','VA124','DS-777'].forEach(v=>{ const o=document.createElement('option'); o.value=o.textContent=v; vac.appendChild(o); });
+        ['1001:Иванов И.И.','1002:Петров П.П.','1003:Smith J.'].forEach((c,i)=>{ const [id,name]=c.split(':'); const label=document.createElement('label'); label.className='row'; label.innerHTML=`<input type="checkbox" data-cid="${id}" ${i<2?'checked':''}/> ${name}`; candList.appendChild(label); });
+        show(1);
+        modeSch.addEventListener('change', ()=>{ slotsWrap.style.display = modeSch.checked ? 'block' : 'none'; });
+        next1.addEventListener('click', ()=> show(2));
+        back2.addEventListener('click', ()=> show(1));
+        next2.addEventListener('click', ()=> show(3));
+        back3.addEventListener('click', ()=> show(2));
+        submit.addEventListener('click', async ()=>{
+          const vacancy_id = vac.value; const candidate_ids = Array.from(candList.querySelectorAll('input[type="checkbox"]')).filter(x=>x.checked).map(x=>x.getAttribute('data-cid'));
+          if(!vacancy_id || candidate_ids.length===0){ alert('Выберите вакансию и кандидатов'); return; }
+          const modes = []; if(modePml.checked) modes.push('pml'); if(modeUvl.checked) modes.push('uvl'); if(modeSch.checked) modes.push('scheduler');
+          const slotsArr = (modeSch.checked ? (slots.value||'').split(/\r?\n/).filter(Boolean) : undefined);
+          result.style.display='block'; result.textContent='...';
+          try{
+            const res = await fetch('/api/invitations/bulk', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ vacancy_id, candidate_ids, modes, slots: slotsArr }) });
+            const data = await res.json();
+            if(!res.ok){ result.textContent = 'Ошибка: '+(data?.detail||res.status); return; }
+            const lines = (data.invitations||[]).map(i=>`${i.candidate_id}: PML=${i.pml_url||'-'} UVL=${i.uvl||'-'} CODE=${i.code||'-'} SLOTS=${(i.slots||[]).join(', ')}`);
+            result.textContent = lines.join('\n');
+          }catch(err){ result.textContent = 'Ошибка: '+(err?.message||String(err)); }
+        });
+      })();
+
+      // Actions: open modals
+      const vacModal=document.getElementById('vacModal'); const vacClose=document.getElementById('vacClose'); const vacSubmit=document.getElementById('vacSubmit'); const vacMsg=document.getElementById('vacMsg'); const vacTitle=document.getElementById('vacTitle'); const vacText=document.getElementById('vacText'); const vacFile=document.getElementById('vacFile'); const vacLang=document.getElementById('vacLang');
+      const cvModal=document.getElementById('cvModal'); const cvClose=document.getElementById('cvClose'); const cvSubmit=document.getElementById('cvSubmit'); const cvMsg=document.getElementById('cvMsg'); const cvFiles=document.getElementById('cvFiles'); const cvVac=document.getElementById('cvVac');
+      const bsVac = window.bootstrap ? new bootstrap.Modal(vacModal) : null;
+      const bsCv = window.bootstrap ? new bootstrap.Modal(cvModal) : null;
+      document.getElementById('btnCreateVac')?.addEventListener('click', (e)=>{ e.preventDefault(); vacMsg.textContent=''; vacText.value=''; vacFile.value=''; vacTitle.value=''; bsVac?.show(); skinBootstrap(); });
+      async function populateCvVac(){ try{ const r=await fetch('/api/vacancies'); const d=await r.json(); cvVac.innerHTML=''; (d.items||[]).forEach(v=>{ const o=document.createElement('option'); o.value=String(v.id); o.textContent = `${v.title} (#${v.id})`; cvVac.appendChild(o); }); }catch{ cvVac.innerHTML=''; } }
+      document.getElementById('btnUploadCV')?.addEventListener('click', async (e)=>{ e.preventDefault(); cvMsg.textContent=''; if(cvFiles) cvFiles.value=''; await populateCvVac(); bsCv?.show(); });
+      document.getElementById('btnCVNew')?.addEventListener('click', async (e)=>{ e.preventDefault(); cvMsg.textContent=''; if(cvFiles) cvFiles.value=''; await populateCvVac(); bsCv?.show(); });
+      document.getElementById('btnVacNew')?.addEventListener('click', (e)=>{ e.preventDefault(); vacMsg.textContent=''; vacText.value=''; vacFile.value=''; vacTitle.value=''; bsVac?.show(); });
+      document.getElementById('lnkCand')?.addEventListener('click', (e)=>{ e.preventDefault(); setView('candidates'); loadCandidates(); });
+      vacClose?.addEventListener('click', ()=>{ bsVac?.hide(); });
+      cvClose?.addEventListener('click', ()=>{ bsCv?.hide(); });
+      vacSubmit?.addEventListener('click', async ()=>{
+        vacMsg.textContent='';
+        try{
+          const title = vacTitle.value||'Vacancy'; const lang=vacLang.value||'ru';
+          if(vacFile.files && vacFile.files[0]){
+            const fd = new FormData(); fd.append('file', vacFile.files[0]); fd.append('title', title); fd.append('lang', lang);
+            const r = await fetch('/api/upload/jd', { method:'POST', body: fd }); const d=await r.json(); if(!r.ok) throw new Error(d?.detail||r.status);
+            if(d?.vacancy_id){ try{ const map=JSON.parse(localStorage.getItem('vacTasks')||'{}'); if(d.task_id) map[String(d.vacancy_id)] = d.task_id; localStorage.setItem('vacTasks', JSON.stringify(map)); }catch{} bsVac?.hide(); setView('vacancies'); await loadVacancies(); startVacAutoPoll(true); return; }
+          } else if((vacText.value||'').trim().length>0){
+            const fd = new FormData(); fd.append('content', vacText.value||''); fd.append('title', title); fd.append('lang', lang);
+            const r = await fetch('/api/upload/jd_text', { method:'POST', body: fd }); const d=await r.json(); if(!r.ok) throw new Error(d?.detail||r.status);
+            if(d?.vacancy_id){ try{ const map=JSON.parse(localStorage.getItem('vacTasks')||'{}'); if(d.task_id) map[String(d.vacancy_id)] = d.task_id; localStorage.setItem('vacTasks', JSON.stringify(map)); }catch{} bsVac?.hide(); setView('vacancies'); await loadVacancies(); startVacAutoPoll(true); return; }
+          } else { throw new Error('Заполните текст или выберите файл'); }
+          bsVac?.hide(); await loadVacancies(); await loadKpi();
+        }catch(err){ vacMsg.textContent = err?.message||String(err); }
+      });
+      cvSubmit?.addEventListener('click', async ()=>{
+        cvMsg.textContent='';
+        try{
+          if(!(cvFiles?.files && cvFiles.files.length>0)) throw new Error('Выберите файлы');
+          const files = Array.from(cvFiles.files);
+          const vacancyId = (cvVac?.value||'').trim();
+          for(const f of files){
+            const fd = new FormData(); fd.append('file', f); if(vacancyId) fd.append('vacancy_id', vacancyId);
+            const r = await fetch('/api/upload/cv', { method:'POST', body: fd });
+            const d = await r.json(); if(!r.ok) throw new Error(d?.detail||r.status);
+            try{
+              // после загрузки формируем персональную ссылку (без вакансии)
+              const candId = d?.candidate_id;
+              if(candId){
+                // ничего не делаем тут, список обновим после всех загрузок
+              }
+            }catch{}
+          }
+          bsCv?.hide(); 
+          await loadVacancies(); // Загружаем список вакансий для фильтра
+          await loadCandidates();
+        }catch(err){ cvMsg.textContent = err?.message||String(err); }
+      });
+
+      // Attach handler for manual email reminder (SMTP)
+      document.querySelectorAll('#invTable .btnRemind').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          try{
+            const email = prompt('E-mail для напоминания:'); if(!email) return;
+            const link = btn.closest('tr')?.querySelector('a')?.getAttribute('href')||'';
+            const subject = 'Напоминание: интервью';
+            const text = `Здравствуйте! Напоминаем о приглашении на интервью. Ссылка: ${location.origin}${link}`;
+            const res = await fetch('/api/notify/email', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ to: email, subject, text }) });
+            const data = await res.json();
+            if(!res.ok){ alert('Ошибка отправки: '+(data?.detail||res.status)); return; }
+            alert('Письмо отправлено');
+          }catch(err){ alert('Ошибка: '+(err?.message||String(err))); }
+        });
+      });
+      document.querySelectorAll('#invTable .btnSms').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          try{
+            const to = prompt('Номер телефона (E.164):'); if(!to) return;
+            const link = btn.closest('tr')?.querySelector('a')?.getAttribute('href')||'';
+            const text = `Ссылка на интервью: ${location.origin}${link}`;
+            const res = await fetch('/api/notify/sms', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ to, text }) });
+            const data = await res.json();
+            if(!res.ok){ alert('Ошибка SMS: '+(data?.detail||res.status)); return; }
+            alert('SMS отправлено');
+          }catch(err){ alert('Ошибка: '+(err?.message||String(err))); }
+        });
+      });
+      document.querySelectorAll('#invTable .btnTg').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          try{
+            const chat_id = prompt('Telegram chat_id:'); if(!chat_id) return;
+            const link = btn.closest('tr')?.querySelector('a')?.getAttribute('href')||'';
+            const text = `Ссылка на интервью: ${location.origin}${link}`;
+            const res = await fetch('/api/notify/telegram', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chat_id, text }) });
+            const data = await res.json();
+            if(!res.ok){ alert('Ошибка Telegram: '+(data?.detail||res.status)); return; }
+            alert('Сообщение отправлено');
+          }catch(err){ alert('Ошибка: '+(err?.message||String(err))); }
+        });
+      });
+
+      // Audit - код удален, так как секция аудита была удалена
+      // const auditT = document.getElementById('auditTable'); const btnAuditReload=document.getElementById('btnAuditReload');
+      // async function loadAudit(){ if(!authReady) return; try{ const r=await fetch('/api/audit?limit=200'); const d=await r.json(); auditT.innerHTML=''; (d?.items||[]).forEach(a=>{ const tr=document.createElement('tr'); tr.innerHTML = `<td>${new Date(a.created_at).toLocaleString()}</td><td>${a.user||'-'}</td><td>${a.action}</td><td><pre style="white-space:pre-wrap;margin:0">${a.meta?JSON.stringify(a.meta):''}</pre></td>`; auditT.appendChild(tr); }); }catch{} }
+      // btnAuditReload?.addEventListener('click', loadAudit);
+      async function auditLog(action, meta){ try{ const token = localStorage.getItem('hrToken')||''; const headers={ 'Content-Type':'application/json' }; if(token){ headers['Authorization'] = 'Bearer '+token; } await fetch('/api/audit', { method:'POST', headers, body: JSON.stringify({ action, meta }) }); }catch{} }
+    </script>
+  </body>
+  </html>
+
+

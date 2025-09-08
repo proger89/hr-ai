@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Интервью</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <style>
+      :root{--accent:#3b5bdb;--bg:#0f0f1e;--text:#ffffff;--wave:#3b5bdb}
+      *{box-sizing:border-box}
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;margin:0;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;overflow:hidden}
+      
+      /* Градиентный фон */
+      .bg-grad{
+        background: radial-gradient(ellipse at center, #1a1a3e 0%, #0f0f1e 100%);
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+      }
+      
+      /* Центральный контейнер */
+      .center-container{
+        flex:1;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        padding:20px;
+      }
+      
+      /* Контейнер волны */
+      .wave-container{
+        width:400px;
+        height:200px;
+        position:relative;
+        margin:40px 0;
+      }
+      
+      /* Canvas для волны */
+      #waveCanvas{
+        width:100%;
+        height:100%;
+      }
+      
+      /* Прогресс бар */
+      .progress-container{
+        width:100%;
+        max-width:500px;
+        margin:20px 0;
+      }
+      
+      .progress{
+        height:6px;
+        background:rgba(255,255,255,0.1);
+        border-radius:3px;
+        overflow:hidden;
+      }
+      
+      .progress-bar{
+        height:100%;
+        background:var(--accent);
+        transition:width 0.3s ease;
+      }
+      
+      /* Статус текст */
+      .status-text{
+        font-size:18px;
+        color:rgba(255,255,255,0.8);
+        text-align:center;
+        margin:20px 0;
+        min-height:30px;
+      }
+      
+      /* Кнопка выхода */
+      .exit-btn{
+        position:fixed;
+        bottom:40px;
+        left:50%;
+        transform:translateX(-50%);
+        background:rgba(255,255,255,0.1);
+        border:1px solid rgba(255,255,255,0.2);
+        color:#fff;
+        padding:12px 32px;
+        border-radius:30px;
+        cursor:pointer;
+        transition:all 0.3s;
+        backdrop-filter:blur(10px);
+      }
+      
+      .exit-btn:hover{
+        background:rgba(255,255,255,0.2);
+        border-color:rgba(255,255,255,0.3);
+      }
+      
+      /* Индикатор микрофона */
+      .mic-indicator{
+        position:fixed;
+        top:20px;
+        right:20px;
+        width:40px;
+        height:40px;
+        border-radius:50%;
+        background:rgba(255,255,255,0.1);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        transition:all 0.3s;
+      }
+      
+      .mic-indicator.active{
+        background:rgba(239,68,68,0.2);
+        box-shadow:0 0 0 2px rgba(239,68,68,0.5);
+      }
+      
+      /* Индикатор соединения */
+      .connection-status{
+        position:fixed;
+        top:20px;
+        left:20px;
+        display:flex;
+        align-items:center;
+        gap:8px;
+        padding:8px 16px;
+        background:rgba(255,255,255,0.1);
+        border-radius:20px;
+        font-size:14px;
+      }
+      
+      .connection-dot{
+        width:8px;
+        height:8px;
+        border-radius:50%;
+        background:#fbbf24;
+      }
+      
+      .connection-dot.connected{
+        background:#10b981;
+      }
+      
+      .connection-dot.error{
+        background:#ef4444;
+      }
+      
+      /* Анимация появления */
+      .fade-in{
+        animation:fadeIn 0.5s ease-out both;
+      }
+      
+      @keyframes fadeIn{
+        from{opacity:0;transform:translateY(20px)}
+        to{opacity:1;transform:translateY(0)}
+      }
+      
+      /* Мобильная адаптация */
+      @media (max-width: 600px){
+        .wave-container{
+          width:300px;
+          height:150px;
+        }
+      }
+      
+      /* Сообщение об ошибке */
+      .error-message{
+        background:rgba(239,68,68,0.1);
+        border:1px solid rgba(239,68,68,0.3);
+        color:#ef4444;
+        padding:16px 24px;
+        border-radius:8px;
+        margin:20px 0;
+        display:none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bg-grad"></div>
+    <div id="unlock" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f0f1e;z-index:9999">
+      <button id="btnUnlock" class="btn btn-primary btn-lg" style="font-size:18px;padding:14px 20px;border-radius:10px">Начать интервью</button>
+    </div>
+    
+    <!-- Статус соединения -->
+    <div class="connection-status">
+      <div class="connection-dot" id="connectionDot"></div>
+      <span id="connectionText">Подключение...</span>
+    </div>
+    
+    <!-- Индикатор микрофона -->
+    <div class="mic-indicator" id="micIndicator">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff">
+        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+      </svg>
+    </div>
+    
+    <!-- Основной контент -->
+    <div class="center-container">
+      <!-- Сообщение об ошибке -->
+      <div class="error-message" id="errorMessage" style="display:none"></div>
+      
+      <!-- Статус -->
+      <div class="status-text fade-in" id="statusText">Подготовка к интервью...</div>
+      
+      <!-- Волна -->
+      <div class="wave-container fade-in" style="animation-delay:0.2s">
+        <canvas id="waveCanvas"></canvas>
+      </div>
+      
+      <!-- Прогресс -->
+      <div class="progress-container fade-in" style="animation-delay:0.4s">
+        <div class="progress">
+          <div class="progress-bar" id="progressBar" style="width:0%"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:14px;color:rgba(255,255,255,0.6)">
+          <span id="progressText">0 из 0 вопросов</span>
+          <span id="timeText">0:00</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Кнопка выхода -->
+    <button class="exit-btn" id="exitBtn">Завершить интервью</button>
+    
+    <script>
+      // ====== Визуализация волны ======
+      const canvas = document.getElementById('waveCanvas');
+      const ctx = canvas.getContext('2d');
+      
+      function resizeCanvas() {
+        const container = canvas.parentElement;
+        canvas.width = container.offsetWidth;
+        canvas.height = container.offsetHeight;
+      }
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+      
+      // Параметры волны
+      const waveCount = 5;
+      const waves = [];
+      let animationId = null;
+      let audioLevel = 0;
+      let targetAudioLevel = 0;
+      
+      // Инициализация волн
+      for (let i = 0; i < waveCount; i++) {
+        waves.push({
+          amplitude: 20 + Math.random() * 30,
+          frequency: 0.01 + Math.random() * 0.02,
+          phase: Math.random() * Math.PI * 2,
+          speed: 0.01 + Math.random() * 0.02,
+          opacity: 0.1 + Math.random() * 0.3
+        });
+      }
+      
+      // Функция отрисовки волны
+      function drawWave(wave, index) {
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height / 2);
+        
+        for (let x = 0; x <= canvas.width; x++) {
+          const y = canvas.height / 2 + 
+                   Math.sin(x * wave.frequency + wave.phase) * wave.amplitude * 
+                   (0.3 + audioLevel * 0.7);
+          ctx.lineTo(x, y);
+        }
+        
+        ctx.strokeStyle = `rgba(59, 91, 219, ${wave.opacity * (0.5 + audioLevel * 0.5)})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Обновление фазы для анимации
+        wave.phase += wave.speed * (1 + audioLevel * 2);
+      }
+      
+      // Анимационный цикл
+      function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Плавное изменение уровня
+        audioLevel += (targetAudioLevel - audioLevel) * 0.1;
+        
+        // Рисуем все волны
+        waves.forEach((wave, index) => {
+          drawWave(wave, index);
+        });
+        
+        animationId = requestAnimationFrame(animate);
+      }
+      
+      // Запуск анимации
+      animate();
+      
+      // Управление уровнем волны
+      function setWaveLevel(level) {
+        targetAudioLevel = Math.max(0, Math.min(1, level));
+      }
+      
+      // ====== Элементы интерфейса ======
+      const statusText = document.getElementById('statusText');
+      const progressBar = document.getElementById('progressBar');
+      const progressText = document.getElementById('progressText');
+      const timeText = document.getElementById('timeText');
+      const exitBtn = document.getElementById('exitBtn');
+      const micIndicator = document.getElementById('micIndicator');
+      const connectionDot = document.getElementById('connectionDot');
+      const connectionText = document.getElementById('connectionText');
+      const errorMessage = document.getElementById('errorMessage');
+      
+      // ====== Таймер ======
+      let startTime = Date.now();
+      let timerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = elapsed % 60;
+        timeText.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      }, 1000);
+      
+      // ====== Состояние интервью ======
+      let ws = null;
+      let sessionId = null;
+      let totalQuestions = 5;
+      let currentQuestion = 0;
+      let isListening = false;
+      let audioContext = null;
+      let audioProcessor = null;
+      let mediaStream = null;
+      let audioQueue = [];
+      let isPlaying = false;
+      
+      // ====== WebSocket и Realtime API ======
+      async function startInterview() {
+        try {
+          statusText.textContent = 'Подключение к серверу...';
+          
+          const candidateId = localStorage.getItem('currentCandidateId') || '';
+          if (!candidateId) {
+            throw new Error('ID кандидата не найден');
+          }
+          
+          // Аудиоконтекст будет создан/резюмирован в unlockAndStart
+          if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          if (audioContext.state !== 'running') await audioContext.resume();
+          
+          // Запрашиваем доступ к микрофону
+          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          
+          // Подключаемся к WebSocket
+          const urlLang = new URLSearchParams(location.search).get('lang');
+          const speechLang = urlLang || localStorage.getItem('speechLang') || ((navigator.language||'ru').startsWith('ru') ? 'ru-RU' : 'en-US');
+          const uiLang = localStorage.getItem('uiLang') || (speechLang.startsWith('ru') ? 'ru' : 'en');
+          const lang = speechLang.startsWith('ru') ? 'ru' : 'en';
+          const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/realtime/ws/${candidateId}?lang=${lang}&ui=${uiLang}`;
+          ws = new WebSocket(wsUrl);
+          
+          ws.onopen = () => {
+            console.log('WebSocket connected');
+            setConnectionStatus('connected', 'Подключено');
+            statusText.textContent = 'Готов к интервью';
+            
+            // Начинаем захват аудио
+            startAudioCapture();
+          };
+          
+          ws.onmessage = async (event) => {
+            const data = JSON.parse(event.data);
+            handleServerEvent(data);
+          };
+          
+          ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            setConnectionStatus('error', 'Ошибка соединения');
+            // Не показываем ошибку при обычных проблемах соединения
+          };
+          
+          ws.onclose = () => {
+            console.log('WebSocket closed');
+            setConnectionStatus('disconnected', 'Отключено');
+            stopAudioCapture();
+          };
+          
+        } catch (err) {
+          console.error('Ошибка начала интервью:', err);
+          showError('Ошибка: ' + err.message);
+          statusText.textContent = 'Ошибка инициализации';
+        }
+      }
+      
+      // ====== Обработка событий от сервера ======
+      async function handleServerEvent(event) {
+        // Убираем лишний вывод в консоль
+        // console.log('Server event:', event.type);
+        
+        switch (event.type) {
+          case 'session.created':
+            sessionId = event.session.id;
+            totalQuestions = event.session.total_questions || 5;
+            progressText.textContent = `0 из ${totalQuestions} вопросов`;
+            // Больше не инициируем response.create с фронта —
+            // язык и стартовый ответ формирует сервер после session.update
+            break;
+            
+          case 'session.updated':
+            // Тихо обновляем сессию
+            break;
+            
+          case 'input_audio_buffer.speech_started':
+            isListening = true;
+            micIndicator.classList.add('active');
+            break;
+            
+          case 'input_audio_buffer.speech_stopped':
+            isListening = false;
+            micIndicator.classList.remove('active');
+            break;
+            
+          case 'response.audio.delta':
+            // Получаем аудио чанк
+            if (event.delta) {
+              queueAudioChunk(event.delta);
+            }
+            break;
+            
+          case 'response.audio_transcript.delta':
+            // Накапливаем транскрипт ответа ИИ
+            if (event.delta && event.delta.trim() && event.delta !== '.') {
+              if (!window.currentAIResponse) {
+                window.currentAIResponse = '';
+              }
+              window.currentAIResponse += event.delta;
+              statusText.textContent = 'ИИ говорит...';
+            }
+            break;
+            
+          case 'response.audio.done':
+            // Аудио ответ завершен
+            setWaveLevel(0);
+            // Сбрасываем статус
+            statusText.textContent = 'Готов к интервью';
+            window.currentAIResponse = '';
+            break;
+            
+          case 'response.done':
+            // Ответ полностью завершен
+            // console.log('Response completed');
+            statusText.textContent = 'Готов к интервью';
+            break;
+            
+          case 'progress.update':
+            // Обновляем прогресс
+            currentQuestion = event.current;
+            updateProgress();
+            break;
+            
+          case 'interview.completed':
+            // Интервью завершено
+            finishInterview(event.overall_score, event.passed);
+            break;
+            
+          case 'error':
+            // Показываем только критические ошибки
+            if (event.error?.message && event.error.message.includes('не найден')) {
+              showError(event.error.message);
+            }
+            break;
+        }
+      }
+      
+      // ====== Отправка событий клиента ======
+      function sendClientEvent(event) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(event));
+        }
+      }
+      
+      // ====== Захват аудио с микрофона ======
+      function startAudioCapture() {
+        if (!audioContext || !mediaStream) return;
+        
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        audioProcessor = audioContext.createScriptProcessor(2048, 1, 1);
+        
+        audioProcessor.onaudioprocess = (e) => {
+          const inputData = e.inputBuffer.getChannelData(0);
+          const ds = downsampleFloat32(inputData, audioContext.sampleRate, 24000);
+          const pcm16 = floatTo16BitPCM(ds);
+          const base64 = arrayBufferToBase64(pcm16);
+          sendAppend(base64);
+        };
+        
+        source.connect(audioProcessor);
+        // не подключаем processor к destination, чтобы не ловить локальное эхо
+      }
+      
+      function stopAudioCapture() {
+        if (audioProcessor) {
+          audioProcessor.disconnect();
+          audioProcessor = null;
+        }
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(track => track.stop());
+          mediaStream = null;
+        }
+      }
+      
+      // ====== Воспроизведение аудио от ИИ ======
+      function queueAudioChunk(base64Audio) {
+        audioQueue.push(base64Audio);
+        if (!isPlaying) {
+          playNextChunk();
+        }
+      }
+      
+      async function playNextChunk() {
+        if (audioQueue.length === 0) {
+          isPlaying = false;
+          setWaveLevel(0);
+          return;
+        }
+        
+        isPlaying = true;
+        setWaveLevel(0.8);
+        
+        const base64 = audioQueue.shift();
+        const arrayBuffer = base64ToArrayBuffer(base64);
+        const audioBuffer = await pcm16ToAudioBuffer(arrayBuffer);
+        
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.onended = () => {
+          playNextChunk();
+        };
+        
+        source.connect(audioContext.destination);
+        source.start();
+      }
+      
+      // ====== Утилиты для работы с аудио ======
+      let lastCommit = 0;
+      function sendAppend(base64){
+        sendClientEvent({ type:'input_audio_buffer.append', audio: base64 });
+        const now = performance.now();
+        if (now - lastCommit > 250){
+          sendClientEvent({ type:'input_audio_buffer.commit' });
+          lastCommit = now;
+        }
+      }
+
+      function downsampleFloat32(buffer, inRate, outRate){
+        outRate = outRate || 24000;
+        if (!inRate || inRate === outRate) return buffer;
+        const ratio = inRate / outRate;
+        const newLen = Math.round(buffer.length / ratio);
+        const out = new Float32Array(newLen);
+        let i=0, j=0;
+        while(i<newLen){
+          out[i++] = buffer[Math.floor(j)] || 0;
+          j += ratio;
+        }
+        return out;
+      }
+      function floatTo16BitPCM(float32Array) {
+        const buffer = new ArrayBuffer(float32Array.length * 2);
+        const view = new DataView(buffer);
+        let offset = 0;
+        for (let i = 0; i < float32Array.length; i++, offset += 2) {
+          const s = Math.max(-1, Math.min(1, float32Array[i]));
+          view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+        }
+        return buffer;
+      }
+      
+      function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, i + chunkSize);
+          binary += String.fromCharCode.apply(null, chunk);
+        }
+        return btoa(binary);
+      }
+      
+      function base64ToArrayBuffer(base64) {
+        const binary = atob(base64);
+        const buffer = new ArrayBuffer(binary.length);
+        const view = new Uint8Array(buffer);
+        for (let i = 0; i < binary.length; i++) {
+          view[i] = binary.charCodeAt(i);
+        }
+        return buffer;
+      }
+      
+      async function pcm16ToAudioBuffer(arrayBuffer) {
+        const dataView = new DataView(arrayBuffer);
+        const length = arrayBuffer.byteLength / 2;
+        const audioBuffer = audioContext.createBuffer(1, length, 24000);
+        const channelData = audioBuffer.getChannelData(0);
+        
+        for (let i = 0; i < length; i++) {
+          const sample = dataView.getInt16(i * 2, true);
+          channelData[i] = sample / 32768;
+        }
+        
+        return audioBuffer;
+      }
+      
+      // ====== UI функции ======
+      function setConnectionStatus(status, text) {
+        connectionText.textContent = text;
+        connectionDot.className = 'connection-dot';
+        if (status === 'connected') {
+          connectionDot.classList.add('connected');
+        } else if (status === 'error') {
+          connectionDot.classList.add('error');
+        }
+      }
+      
+      function showError(message) {
+        errorMessage.textContent = message;
+        errorMessage.style.display = 'block';
+      }
+      
+      function updateProgress() {
+        const progress = (currentQuestion / totalQuestions) * 100;
+        progressBar.style.width = progress + '%';
+        progressText.textContent = `${currentQuestion} из ${totalQuestions} вопросов`;
+      }
+      
+      // ====== Завершение интервью ======
+      async function finishInterview(score, passed) {
+        statusText.textContent = 'Завершение интервью...';
+        
+        // Останавливаем все процессы
+        if (ws) {
+          ws.close();
+        }
+        if (timerInterval) {
+          clearInterval(timerInterval);
+        }
+        stopAudioCapture();
+        
+        // Переходим на страницу результатов
+        setTimeout(() => {
+          location.href = `/complete.html?score=${score || 0}&passed=${passed ? 1 : 0}`;
+        }, 1000);
+      }
+      
+      // Обработчик кнопки выхода
+      exitBtn.addEventListener('click', () => {
+        if (confirm('Вы уверены, что хотите завершить интервью?')) {
+          finishInterview(0, false);
+        }
+      });
+      
+      // Разблокировка аудио и запуск
+      async function unlockAndStart(){
+        try{
+          if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          if (audioContext.state !== 'running') await audioContext.resume();
+          document.getElementById('unlock').style.display = 'none';
+          await startInterview();
+        }catch(e){ console.error('unlock failed', e); }
+      }
+      document.getElementById('btnUnlock').addEventListener('click', unlockAndStart, { once: true });
+      document.addEventListener('keydown', unlockAndStart, { once: true });
+      
+      // Cleanup при закрытии страницы
+      window.addEventListener('beforeunload', () => {
+        if (ws) {
+          ws.close();
+        }
+        if (animationId) {
+          cancelAnimationFrame(animationId);
+        }
+        if (timerInterval) {
+          clearInterval(timerInterval);
+        }
+        stopAudioCapture();
+      });
+    </script>
+  </body>
+</html>
