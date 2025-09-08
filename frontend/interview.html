@@ -417,8 +417,8 @@
               if (!kickoffSent && ws && ws.readyState === WebSocket.OPEN) {
                 const greeting = getGreeting(lang);
                 const instr = lang === 'ru'
-                  ? `${greeting}! Ты HR-интервьюер. Сразу задай первый вопрос: Расскажите, пожалуйста, о себе.`
-                  : `${greeting}! You are the HR interviewer. Immediately ask the first question: Please tell me about yourself.`;
+                  ? `${greeting}! Ты HR-интервьюер. Сразу задай первый вопрос: Расскажите, пожалуйста, о себе. Затем вызови tool \`question_asked\` с index=1.`
+                  : `${greeting}! You are the HR interviewer. Immediately ask the first question: Please tell me about yourself. Then call tool \`question_asked\` with index=1.`;
                 sendClientEvent({
                   type: 'response.create',
                   response: { modalities: ['audio','text'], instructions: instr }
@@ -454,8 +454,8 @@
             // После окончания речи инициируем обработку и запрашиваем ответ модели
             sendClientEvent({ type: 'input_audio_buffer.commit' });
             const followInstr = lang === 'ru'
-              ? 'Ты HR-интервьюер. Проанализируй ответ кандидата и задай следующий вопрос интервью по сценарию.'
-              : 'You are the HR interviewer. Analyze the candidate\'s response and ask the next interview question according to the scenario.';
+              ? 'Ты HR-интервьюер. Оцени ответ кандидата (вызови tool `evaluate_answer`), затем задай следующий вопрос по сценарию и вызови tool `question_asked` с номером вопроса.'
+              : 'You are the HR interviewer. Evaluate the candidate\'s answer (call tool `evaluate_answer`), then ask the next scenario question and call tool `question_asked` with the question number.';
             sendClientEvent({
               type: 'response.create',
               response: { modalities: ['audio','text'], instructions: followInstr }
@@ -711,9 +711,10 @@
       }
       
       function updateProgress() {
-        const progress = (currentQuestion / totalQuestions) * 100;
+        const current = Math.min(currentQuestion, totalQuestions);
+        const progress = (current / totalQuestions) * 100;
         progressBar.style.width = progress + '%';
-        progressText.textContent = `${currentQuestion} из ${totalQuestions} вопросов`;
+        progressText.textContent = `${current} из ${totalQuestions} вопросов`;
       }
       
       // ====== Завершение интервью ======

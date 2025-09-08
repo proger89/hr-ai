@@ -29,7 +29,7 @@ def get_greeting(lang: str) -> str:
 
 # Конфигурация
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-REALTIME_MODEL = os.getenv("REALTIME_MODEL", "gpt-realtime")
+REALTIME_MODEL = os.getenv("REALTIME_MODEL", "gpt-5.1-mini")
 REALTIME_WS_URL = "wss://api.openai.com/v1/realtime"
 
 
@@ -185,7 +185,7 @@ def create_session_config(
                 "sample_rate": 24000,
                 "turn_detection": {
                     "type": "semantic_vad",
-                    "create_response": True,
+                    "create_response": False,
                     "threshold": 0.75,
                     "silence_duration_ms": 1500
                 }

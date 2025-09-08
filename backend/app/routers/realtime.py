@@ -239,14 +239,14 @@ async def realtime_websocket(
                 q_text = (q0.get("question") or "").strip() or None
         greet = get_greeting(candidate_lang)
         ru_instr = (
-            f"{greet}! Ты HR-интервьюер. Сразу задай первый вопрос: {q_text}."
+            f"{greet}! Ты HR-интервьюер. Сразу задай первый вопрос: {q_text}. Затем вызови tool `question_asked` с index=1."
             if q_text else
-            f"{greet}! Ты HR-интервьюер. Сразу задай первый вопрос: Расскажите, пожалуйста, о себе."
+            f"{greet}! Ты HR-интервьюер. Сразу задай первый вопрос: Расскажите, пожалуйста, о себе. Затем вызови tool `question_asked` с index=1."
         )
         en_instr = (
-            f"{greet}! You are the HR interviewer. Immediately ask the first question: {q_text}."
+            f"{greet}! You are the HR interviewer. Immediately ask the first question: {q_text}. Then call tool `question_asked` with index=1."
             if q_text else
-            f"{greet}! You are the HR interviewer. Immediately ask the first question: Please tell me about yourself."
+            f"{greet}! You are the HR interviewer. Immediately ask the first question: Please tell me about yourself. Then call tool `question_asked` with index=1."
         )
         await openai_ws.send(json.dumps({
             "type": "response.create",
@@ -379,6 +379,7 @@ async def proxy_openai_to_client(
                         idx = int(args.get("index") or (session.current_question + 1))
                     except Exception:
                         idx = session.current_question + 1
+                    idx = max(1, min(idx, session.total_questions))
                     if idx > session.current_question:
                         session.current_question = idx
                         await client_ws.send_json({
@@ -399,27 +400,7 @@ async def proxy_openai_to_client(
                             }
                         }))
 
-            # Фолбэк: если модель задала вопрос, но не вызвала question_asked
-            if data.get("type") == "response.done" and not session.context.get("interview_completed"):
-                if not session.context.get("question_marked"):
-                    session.current_question += 1
-                    session.context["question_marked"] = True
-                    await client_ws.send_json({
-                        "type": "progress.update",
-                        "current": session.current_question,
-                        "total": session.total_questions
-                    })
-                    if session.current_question >= session.total_questions:
-                        await openai_ws.send(json.dumps({
-                            "type": "response.create",
-                            "response": {
-                                "modalities": ["audio", "text"],
-                                "instructions": (
-                                    "Call the tool `end_interview` NOW with your final overall_score, strengths, weaknesses, "
-                                    "and recommendation (hire/maybe/reject). Then say a brief closing line. Do not ask new questions."
-                                )
-                            }
-                        }))
+            # Фолбэк удалён: прогресс обновляется только при вызове question_asked
 
             # Пересылаем клиенту
             await client_ws.send_json(data)
