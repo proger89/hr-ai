@@ -393,8 +393,21 @@
             sessionId = event.session.id;
             totalQuestions = event.session.total_questions || 5;
             progressText.textContent = `0 из ${totalQuestions} вопросов`;
-            // Больше не инициируем response.create с фронта —
-            // язык и стартовый ответ формирует сервер после session.update
+            // Подстраховка: если модель не заговорила в течение 1.5s — отправим kickoff
+            setTimeout(() => {
+              if (!isPlaying && ws && ws.readyState === WebSocket.OPEN) {
+                const urlLang = new URLSearchParams(location.search).get('lang');
+                const speechLang = urlLang || localStorage.getItem('speechLang') || ((navigator.language||'ru').startsWith('ru') ? 'ru-RU' : 'en-US');
+                const short = speechLang.startsWith('ru') ? 'ru' : 'en';
+                const instr = short === 'ru'
+                  ? 'Поздоровайся кратко по‑русски и сразу задай первый вопрос: Расскажите, пожалуйста, о себе.'
+                  : "Greet briefly in English and immediately ask the first question: Please tell me about yourself.";
+                sendClientEvent({
+                  type: 'response.create',
+                  response: { modalities: ['audio'], instructions: instr }
+                });
+              }
+            }, 1500);
             break;
             
           case 'session.updated':

@@ -101,7 +101,16 @@ async def realtime_websocket(
         
         if vacancy:
             jd_text = vacancy.jd_json.get("text", "") if vacancy.jd_json else ""
-            scenario = vacancy.jd_json.get("scenario", []) if vacancy.jd_json else []
+            raw_scenario = vacancy.jd_json.get("scenario", {}) if vacancy and vacancy.jd_json else {}
+            # Нормализуем сценарий: поддержка как dict секций, так и уже list
+            scenario = []
+            if isinstance(raw_scenario, list):
+                scenario = [q for q in raw_scenario if isinstance(q, dict)]
+            elif isinstance(raw_scenario, dict):
+                for key in ["intro", "experience", "stack", "cases", "communication", "final"]:
+                    val = raw_scenario.get(key)
+                    if isinstance(val, str) and val.strip():
+                        scenario.append({"competence": key, "question": val.strip()})
         
         # Определяем язык из query или из профиля
         query_params = dict(websocket.query_params)
@@ -130,6 +139,12 @@ async def realtime_websocket(
         session_id = str(uuid.uuid4())
         realtime_session = RealtimeSession(session_id, str(cand_id), vacancy_id)
         realtime_sessions[session_id] = realtime_session
+        # Проставим количество вопросов по сценарию, если он задан
+        if scenario and isinstance(scenario, list):
+            try:
+                realtime_session.total_questions = max(1, min(5, len(scenario)))
+            except Exception:
+                pass
         
         # Подключаемся к OpenAI Realtime API
         ws_url = f"{REALTIME_WS_URL}?model={REALTIME_MODEL}"
@@ -189,11 +204,11 @@ async def realtime_websocket(
 
         # Запускаем интервью: формируем первый вопрос и просим модель поздороваться и задать его
         # Формируем первый вопрос: либо из сценария вакансии, либо дефолт
+        q_text: Optional[str] = None
         if scenario and isinstance(scenario, list) and len(scenario) > 0:
             q0 = scenario[0]
-            q_text = q0.get("question") if isinstance(q0, dict) else None
-        else:
-            q_text = None
+            if isinstance(q0, dict):
+                q_text = (q0.get("question") or "").strip() or None
         ru_instr = (
             f"Поздоровайся кратко по‑русски и сразу задай первый вопрос: {q_text}."
             if q_text else
