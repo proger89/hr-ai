@@ -109,12 +109,12 @@ async def realtime_websocket(
         # Нормализуем к 'ru'|'en'
         def normalize_lang(value: str) -> str:
             if not value:
-                return "ru"
+                return "en"
             if value.startswith("ru"):
                 return "ru"
             if value.startswith("en"):
                 return "en"
-            return "ru"
+            return "en"
         normalized_lang = normalize_lang(client_lang)
 
         # Сохраняем в candidate.lang для последующих сессий

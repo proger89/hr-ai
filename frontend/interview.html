@@ -404,6 +404,10 @@
           case 'input_audio_buffer.speech_started':
             isListening = true;
             micIndicator.classList.add('active');
+            // barge-in: отменяем ТОЛЬКО если сейчас проигрывается ответ ИИ
+            if (isPlaying) {
+              sendClientEvent({ type: 'response.cancel' });
+            }
             break;
             
           case 'input_audio_buffer.speech_stopped':
@@ -501,10 +505,33 @@
       }
       
       // ====== Воспроизведение аудио от ИИ ======
-      function queueAudioChunk(base64Audio) {
-        audioQueue.push(base64Audio);
+      // Агрегируем мелкие чанки перед проигрыванием, чтобы не было рваного звука
+      let pendingChunks = [];
+      let pendingBytes = 0;
+      const MIN_AGGREGATED_BYTES = 12000; // ~200мс при 24kHz mono PCM16
+
+      function flushPending() {
+        if (pendingBytes === 0) return;
+        const combined = new Uint8Array(pendingBytes);
+        let offset = 0;
+        for (const u8 of pendingChunks) {
+          combined.set(u8, offset);
+          offset += u8.byteLength;
+        }
+        audioQueue.push(combined.buffer);
+        pendingChunks = [];
+        pendingBytes = 0;
         if (!isPlaying) {
           playNextChunk();
+        }
+      }
+
+      function queueAudioChunk(base64Audio) {
+        const buf = base64ToArrayBuffer(base64Audio);
+        pendingChunks.push(new Uint8Array(buf));
+        pendingBytes += buf.byteLength;
+        if (pendingBytes >= MIN_AGGREGATED_BYTES || !isPlaying) {
+          flushPending();
         }
       }
       
@@ -518,8 +545,8 @@
         isPlaying = true;
         setWaveLevel(0.8);
         
-        const base64 = audioQueue.shift();
-        const arrayBuffer = base64ToArrayBuffer(base64);
+        const next = audioQueue.shift();
+        const arrayBuffer = next instanceof ArrayBuffer ? next : base64ToArrayBuffer(next);
         const audioBuffer = await pcm16ToAudioBuffer(arrayBuffer);
         
         const source = audioContext.createBufferSource();
