@@ -324,6 +324,7 @@
       let mediaStream = null;
       let audioQueue = [];
       let isPlaying = false;
+      let kickoffSent = false;
       
       // ====== WebSocket и Realtime API ======
       async function startInterview() {
@@ -349,14 +350,31 @@
           const lang = speechLang.startsWith('ru') ? 'ru' : 'en';
           const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/realtime/ws/${candidateId}?lang=${lang}&ui=${uiLang}`;
           ws = new WebSocket(wsUrl);
-          
+
           ws.onopen = () => {
             console.log('WebSocket connected');
             setConnectionStatus('connected', 'Подключено');
             statusText.textContent = 'Готов к интервью';
-            
+
             // Начинаем захват аудио
             startAudioCapture();
+
+            // Если сервер не инициировал беседу, подстрахуемся на клиенте
+            setTimeout(() => {
+              if (!kickoffSent && ws && ws.readyState === WebSocket.OPEN) {
+                const urlLang = new URLSearchParams(location.search).get('lang');
+                const speechLang = urlLang || localStorage.getItem('speechLang') || ((navigator.language||'ru').startsWith('ru') ? 'ru-RU' : 'en-US');
+                const short = speechLang.startsWith('ru') ? 'ru' : 'en';
+                const instr = short === 'ru'
+                  ? 'Поздоровайся кратко по‑русски и сразу задай первый вопрос: Расскажите, пожалуйста, о себе.'
+                  : 'Greet briefly in English and immediately ask the first question: Please tell me about yourself.';
+                sendClientEvent({
+                  type: 'response.create',
+                  response: { modalities: ['audio'], instructions: instr }
+                });
+                kickoffSent = true;
+              }
+            }, 500);
           };
           
           ws.onmessage = async (event) => {
@@ -395,7 +413,7 @@
             progressText.textContent = `0 из ${totalQuestions} вопросов`;
             // Подстраховка: если модель не заговорила в течение 1.5s — отправим kickoff
             setTimeout(() => {
-              if (!isPlaying && ws && ws.readyState === WebSocket.OPEN) {
+              if (!kickoffSent && !isPlaying && ws && ws.readyState === WebSocket.OPEN) {
                 const urlLang = new URLSearchParams(location.search).get('lang');
                 const speechLang = urlLang || localStorage.getItem('speechLang') || ((navigator.language||'ru').startsWith('ru') ? 'ru-RU' : 'en-US');
                 const short = speechLang.startsWith('ru') ? 'ru' : 'en';
@@ -406,6 +424,7 @@
                   type: 'response.create',
                   response: { modalities: ['audio'], instructions: instr }
                 });
+                kickoffSent = true;
               }
             }, 1500);
             break;
