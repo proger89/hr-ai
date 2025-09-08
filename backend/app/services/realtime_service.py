@@ -5,6 +5,7 @@ import os
 import json
 import asyncio
 import logging
+import re
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
@@ -48,6 +49,56 @@ class RealtimeSession:
 realtime_sessions: Dict[str, RealtimeSession] = {}
 
 
+def _compact_list(items: Optional[List[str]], n: int = 10) -> List[str]:
+    if not items:
+        return []
+    return [str(s).strip() for s in items if str(s).strip()][:n]
+
+
+def _compact_text(text: Optional[str], max_chars: int = 800) -> str:
+    if not text:
+        return ""
+    t = re.sub(r"\s+", " ", str(text))
+    return t[:max_chars]
+
+
+def build_private_context(resume_tags: Optional[Dict[str, Any]], vacancy_json: Optional[Dict[str, Any]], lang: str) -> str:
+    """Собирает компактный приватный контекст без сырых текстов JD/CV."""
+    resume_tags = resume_tags or {}
+    vacancy_json = vacancy_json or {}
+
+    skills = _compact_list(resume_tags.get("skills") or resume_tags.get("tech_stack"))
+    exp_years = resume_tags.get("experience_years") or resume_tags.get("exp_years")
+    jd_keywords = _compact_list((vacancy_json or {}).get("keywords"))
+    role = (vacancy_json or {}).get("title") or (vacancy_json or {}).get("role")
+    raw_scenario = (vacancy_json or {}).get("scenario") or []
+
+    # Компетенции сценария
+    competences: List[str] = []
+    if isinstance(raw_scenario, list):
+        for q in raw_scenario:
+            if isinstance(q, dict) and q.get("competence"):
+                competences.append(str(q["competence"]))
+    elif isinstance(raw_scenario, dict):
+        for k in ["intro", "experience", "stack", "cases", "communication", "final"]:
+            if raw_scenario.get(k):
+                competences.append(k)
+
+    lines: List[str] = []
+    if role:
+        lines.append(f"Role: {role}")
+    if exp_years:
+        lines.append(f"Experience: ~{exp_years}y")
+    if jd_keywords:
+        lines.append("JD must-have: " + ", ".join(_compact_list(jd_keywords, 12)))
+    if skills:
+        lines.append("Candidate skills: " + ", ".join(_compact_list(skills, 12)))
+    if competences:
+        lines.append("Scenario competences: " + ", ".join(_compact_list(competences, 8)))
+
+    return "\n".join(lines)
+
+
 def create_session_config(
     resume_text: str,
     jd_text: str,
@@ -57,60 +108,51 @@ def create_session_config(
     """Создание конфигурации для Realtime сессии"""
     
     logger.debug(f"create_session_config called with scenario type: {type(scenario)}, value: {scenario}")
-    
-    # Формируем инструкции для ИИ
-    lang_name = "русский" if lang == "ru" else "английский"
-    instructions = f"""# Роль и цель
-Ты профессиональный HR‑интервьюер. Успех — корректное, дружелюбное и структурированное интервью.
 
-## Язык
-- ГОВОРИ СТРОГО ТОЛЬКО НА {lang_name.upper()} ЯЗЫКЕ.
-- НЕ ПЕРЕХОДИ на другие языки ни при каких условиях.
-- Если пользователь говорит не на {lang_name}, по‑{lang_name} вежливо скажи, что говоришь только на {lang_name}.
+    # Формируем инструкции для ИИ без сырых текстов (используем приватный контекст)
+    lang_name = "русском" if lang == "ru" else "английском"
+    instructions = f"""
+# Роль
+Ты профессиональный интервьюер. Веди собеседование строго на {lang_name}. Никаких других языков.
 
-## Контекст вакансии
-{jd_text[:2000]}
+# Приватный контекст (НЕ ОЗВУЧИВАТЬ, НЕ ЦИТИРОВАТЬ)
+<private>
+{{PRIVATE_CONTEXT}}
+</private>
 
-## Резюме кандидата
-{resume_text[:2000]}
+# Правила
+- Жесткий запрет: не читать и не пересказывать приватный контекст; используй его только для подбора вопросов.
+- Сразу после краткого приветствия задай первый вопрос. Не пересказывай JD/резюме.
+- Один вопрос за раз. Жди ответа кандидата.
+- КАЖДЫЙ РАЗ, когда задаёшь НОВЫЙ вопрос, НЕМЕДЛЕННО вызови tool `question_asked` с `index = номер_вопроса` (нумерация с 1).
+- После каждого ответа вызови tool `evaluate_answer` (score 0–100 + короткое обоснование).
+- Всего вопросов: {{TOTAL_Q}}. После последнего вызови `end_interview`.
 
-## Правила
-- НЕ зачитывай и НЕ пересказывай дословно контекст (резюме/вакансию).
-- Используй контекст только для подготовки вопросов.
-- Вопросы короткие и по делу.
-- Один вопрос за раз; жди ответ кандидата.
-- Не перебивай, соблюдай паузы; поддерживай перебивание пользователя.
-- В конце поблагодари кандидата.
-- Не оценивай кандидата вслух.
-
-## Сценарий интервью
 """
     
     if scenario and isinstance(scenario, list):
-        for i, q in enumerate(scenario[:5], 1):
-            if isinstance(q, dict):
-                instructions += f"\n{i}. [{q.get('competence', 'Общий')}] {q.get('question', '')}"
+        instructions += "\n# Сценарий вопросов\n"
+        for i, q in enumerate(scenario[:12], 1):
+            if isinstance(q, dict) and q.get("question"):
+                instructions += f"{i}. [{q.get('competence', 'Общий')}] {q.get('question', '')}\n"
     else:
-        instructions += """
-1. Расскажите о себе и своем опыте
-2. Почему вас заинтересовала эта вакансия?
-3. Опишите свой самый сложный проект
-4. Какие у вас есть вопросы о компании?
-5. Когда вы готовы приступить к работе?
-"""
+        instructions += (
+            "\n# Сценарий вопросов\n"
+            "1. Расскажите о себе и своем опыте\n"
+            "2. Почему вас заинтересовала эта вакансия?\n"
+            "3. Опишите свой самый сложный проект\n"
+            "4. Какие у вас есть вопросы о компании?\n"
+            "5. Когда вы готовы приступить к работе?\n"
+        )
     
-    instructions += f"""
-
-## Приветствие
-Начни с короткого приветствия на {lang_name} и сразу задай первый вопрос. Не предлагай свободный диалог, проводи именно интервью по сценарию.
-
-ПЕРВЫЙ ВОПРОС:
-{"Здравствуйте! Я проведу с вами интервью. Расскажите, пожалуйста, о себе." if lang == "ru" else "Hello! I'll be conducting this interview. Please tell me about yourself."}
-"""
+    instructions += (
+        "\n# Старт\n"
+        + ("Поздоровайся кратко и сразу задай первый вопрос." if lang == "ru" else "Greet briefly and immediately ask the first question.")
+        + "\n"
+    )
     
     # Добавляем язык в конфигурацию
     response_lang = "ru-RU" if lang == "ru" else "en-US"
-    
     output_voice = "alloy" if lang == "en" else "verse"
     return {
         "type": "realtime",
@@ -120,7 +162,7 @@ def create_session_config(
         "output_modalities": ["audio"],
         # Улучшаем распознавание речи и фиксируем язык распознавания
         "input_audio_transcription": {
-            "model": "gpt-4o-transcribe",
+            "model": "gpt-4o-mini-transcribe",
             "language": ("ru" if lang == "ru" else "en")
         },
         "audio": {
@@ -161,6 +203,18 @@ def create_session_config(
                         }
                     },
                     "required": ["score", "reasoning"]
+                }
+            },
+            {
+                "type": "function",
+                "name": "question_asked",
+                "description": "Зафиксировать, что задан очередной вопрос (для прогресса)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "index": {"type": "integer", "description": "Номер вопроса, начиная с 1"}
+                    },
+                    "required": ["index"]
                 }
             },
             {

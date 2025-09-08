@@ -176,11 +176,23 @@ async def realtime_websocket(
         logger.info(f"Candidate language: {candidate_lang}")
         
         session_config = create_session_config(
-            resume_text=resume_text,
-            jd_text=jd_text,
+            resume_text="",  # не даём сырые тексты
+            jd_text="",
             scenario=scenario,
             lang=candidate_lang
         )
+        # Подставляем приватный контекст вместо сырого JD/CV
+        try:
+            from ..services.realtime_service import build_private_context
+            private_context = build_private_context(candidate.tags or {}, vacancy.jd_json if vacancy else {}, candidate_lang)
+            # Общее количество вопросов для плейсхолдера
+            total_q = realtime_session.total_questions
+            instr = session_config.get("instructions", "")
+            instr = instr.replace("{PRIVATE_CONTEXT}", private_context)
+            instr = instr.replace("{TOTAL_Q}", str(total_q))
+            session_config["instructions"] = instr
+        except Exception as _e:
+            logger.warning(f"PRIVATE_CONTEXT inject failed: {_e}")
         
         await openai_ws.send(json.dumps({
             "type": "session.update",
@@ -332,14 +344,38 @@ async def proxy_openai_to_client(
                 item = data.get("item", {})
                 session.conversation_items.append(item)
             
-            # Отслеживаем прогресс
-            if data.get("type") == "response.output_item.done":
-                session.current_question += 1
-                await client_ws.send_json({
-                    "type": "progress.update",
-                    "current": session.current_question,
-                    "total": session.total_questions
-                })
+            # Отслеживаем прогресс только через question_asked
+            if data.get("type") == "response.function_call":
+                fn = data.get("function", {}).get("name")
+                args_raw = data.get("function", {}).get("arguments", "{}")
+                try:
+                    args = json.loads(args_raw)
+                except Exception:
+                    args = {}
+                if fn == "question_asked":
+                    try:
+                        idx = int(args.get("index") or (session.current_question + 1))
+                    except Exception:
+                        idx = session.current_question + 1
+                    if idx > session.current_question:
+                        session.current_question = idx
+                        await client_ws.send_json({
+                            "type": "progress.update",
+                            "current": session.current_question,
+                            "total": session.total_questions
+                        })
+                    # Авто‑финиш: если достигли лимита — заставляем модель вызвать end_interview
+                    if session.current_question >= session.total_questions and not session.context.get("interview_completed"):
+                        await openai_ws.send(json.dumps({
+                            "type": "response.create",
+                            "response": {
+                                "modalities": ["audio"],
+                                "instructions": (
+                                    "Call the tool `end_interview` NOW with your final overall_score, strengths, weaknesses, "
+                                    "and recommendation (hire/maybe/reject). Then say a brief closing line. Do not ask new questions."
+                                )
+                            }
+                        }))
             
             # Пересылаем клиенту
             await client_ws.send_json(data)
