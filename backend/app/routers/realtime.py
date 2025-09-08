@@ -29,6 +29,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/realtime", tags=["realtime"])
 
 
+def get_greeting(lang: str) -> str:
+    hour = datetime.now().hour
+    if lang == "ru":
+        if hour < 12:
+            return "Доброе утро"
+        if hour < 18:
+            return "Добрый день"
+        return "Добрый вечер"
+    else:
+        if hour < 12:
+            return "Good morning"
+        if hour < 18:
+            return "Good afternoon"
+        return "Good evening"
+
+
 async def save_interview_results(
     session: RealtimeSession,
     db_session: AsyncSession
@@ -221,15 +237,16 @@ async def realtime_websocket(
             q0 = scenario[0]
             if isinstance(q0, dict):
                 q_text = (q0.get("question") or "").strip() or None
+        greet = get_greeting(candidate_lang)
         ru_instr = (
-            f"Поздоровайся кратко по‑русски и сразу задай первый вопрос: {q_text}."
+            f"{greet}! Сразу задай первый вопрос: {q_text}."
             if q_text else
-            "Поздоровайся кратко по‑русски и сразу задай первый вопрос: Расскажите, пожалуйста, о себе."
+            f"{greet}! Сразу задай первый вопрос: Расскажите, пожалуйста, о себе."
         )
         en_instr = (
-            f"Greet briefly in English and immediately ask the first question: {q_text}."
+            f"{greet}! Immediately ask the first question: {q_text}."
             if q_text else
-            "Greet briefly in English and immediately ask the first question: Please tell me about yourself."
+            f"{greet}! Immediately ask the first question: Please tell me about yourself."
         )
         await openai_ws.send(json.dumps({
             "type": "response.create",

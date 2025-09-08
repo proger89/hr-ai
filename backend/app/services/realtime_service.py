@@ -10,6 +10,22 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+ 
+ 
+def get_greeting(lang: str) -> str:
+    hour = datetime.now().hour
+    if lang == "ru":
+        if hour < 12:
+            return "Доброе утро"
+        if hour < 18:
+            return "Добрый день"
+        return "Добрый вечер"
+    else:
+        if hour < 12:
+            return "Good morning"
+        if hour < 18:
+            return "Good afternoon"
+        return "Good evening"
 
 # Конфигурация
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -145,10 +161,11 @@ def create_session_config(
             "5. Когда вы готовы приступить к работе?\n"
         )
     
+    greet = get_greeting(lang)
     instructions += (
-        "\n# Старт\n"
-        + ("Поздоровайся кратко и сразу задай первый вопрос." if lang == "ru" else "Greet briefly and immediately ask the first question.")
-        + "\n"
+        f"\n# Старт\n{greet}. Сразу задай первый вопрос.\n"
+        if lang == "ru"
+        else f"\n# Старт\n{greet}. Immediately ask the first question.\n"
     )
     
     # Добавляем язык в конфигурацию

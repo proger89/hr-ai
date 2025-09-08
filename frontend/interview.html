@@ -173,9 +173,6 @@
   </head>
   <body>
     <div class="bg-grad"></div>
-    <div id="unlock" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f0f1e;z-index:9999">
-      <button id="btnUnlock" class="btn btn-primary btn-lg" style="font-size:18px;padding:14px 20px;border-radius:10px">Начать интервью</button>
-    </div>
     
     <!-- Статус соединения -->
     <div class="connection-status">
@@ -329,6 +326,19 @@
       let kickoffSent = false;
       let kickoffTimer = null;
       let lang = 'ru';
+
+      function getGreeting(language) {
+        const h = new Date().getHours();
+        if (language === 'ru') {
+          if (h < 12) return 'Доброе утро';
+          if (h < 18) return 'Добрый день';
+          return 'Добрый вечер';
+        } else {
+          if (h < 12) return 'Good morning';
+          if (h < 18) return 'Good afternoon';
+          return 'Good evening';
+        }
+      }
       
       // ====== WebSocket и Realtime API ======
       async function startInterview() {
@@ -361,20 +371,6 @@
 
             // Начинаем захват аудио
             startAudioCapture();
-
-            // Если сервер не инициировал беседу, подстрахуемся на клиенте
-            kickoffTimer = setTimeout(() => {
-              if (!kickoffSent && ws && ws.readyState === WebSocket.OPEN) {
-                const instr = lang === 'ru'
-                  ? 'Поздоровайся кратко по‑русски и сразу задай первый вопрос: Расскажите, пожалуйста, о себе.'
-                  : 'Greet briefly in English and immediately ask the first question: Please tell me about yourself.';
-                sendClientEvent({
-                  type: 'response.create',
-                  response: { modalities: ['audio','text'], instructions: instr }
-                });
-                kickoffSent = true;
-              }
-            }, 1500);
           };
           
           ws.onmessage = async (event) => {
@@ -417,6 +413,19 @@
             sessionId = event.session.id;
             totalQuestions = event.session.total_questions || 5;
             progressText.textContent = `0 из ${totalQuestions} вопросов`;
+            kickoffTimer = setTimeout(() => {
+              if (!kickoffSent && ws && ws.readyState === WebSocket.OPEN) {
+                const greeting = getGreeting(lang);
+                const instr = lang === 'ru'
+                  ? `${greeting}! Сразу задай первый вопрос: Расскажите, пожалуйста, о себе.`
+                  : `${greeting}! Immediately ask the first question: Please tell me about yourself.`;
+                sendClientEvent({
+                  type: 'response.create',
+                  response: { modalities: ['audio','text'], instructions: instr }
+                });
+                kickoffSent = true;
+              }
+            }, 1500);
             break;
             
           case 'session.updated':
@@ -442,8 +451,15 @@
           case 'input_audio_buffer.speech_stopped':
             isListening = false;
             micIndicator.classList.remove('active');
-            // После окончания речи инициируем обработку
+            // После окончания речи инициируем обработку и запрашиваем ответ модели
             sendClientEvent({ type: 'input_audio_buffer.commit' });
+            const followInstr = lang === 'ru'
+              ? 'Проанализируй ответ кандидата и задай следующий вопрос интервью по сценарию.'
+              : 'Analyze the candidate\'s response and ask the next interview question according to the scenario.';
+            sendClientEvent({
+              type: 'response.create',
+              response: { modalities: ['audio','text'], instructions: followInstr }
+            });
             break;
             
           case 'response.audio.delta':
@@ -731,12 +747,14 @@
         try{
           if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
           if (audioContext.state !== 'running') await audioContext.resume();
-          document.getElementById('unlock').style.display = 'none';
           await startInterview();
         }catch(e){ console.error('unlock failed', e); }
       }
-      document.getElementById('btnUnlock').addEventListener('click', unlockAndStart, { once: true });
-      document.addEventListener('keydown', unlockAndStart, { once: true });
+      document.addEventListener('DOMContentLoaded', () => {
+        unlockAndStart();
+        document.addEventListener('click', unlockAndStart, { once: true });
+        document.addEventListener('keydown', unlockAndStart, { once: true });
+      });
       
       // Cleanup при закрытии страницы
       window.addEventListener('beforeunload', () => {
