@@ -239,14 +239,14 @@ async def realtime_websocket(
                 q_text = (q0.get("question") or "").strip() or None
         greet = get_greeting(candidate_lang)
         ru_instr = (
-            f"{greet}! Сразу задай первый вопрос: {q_text}."
+            f"{greet}! Ты HR-интервьюер. Сразу задай первый вопрос: {q_text}."
             if q_text else
-            f"{greet}! Сразу задай первый вопрос: Расскажите, пожалуйста, о себе."
+            f"{greet}! Ты HR-интервьюер. Сразу задай первый вопрос: Расскажите, пожалуйста, о себе."
         )
         en_instr = (
-            f"{greet}! Immediately ask the first question: {q_text}."
+            f"{greet}! You are the HR interviewer. Immediately ask the first question: {q_text}."
             if q_text else
-            f"{greet}! Immediately ask the first question: Please tell me about yourself."
+            f"{greet}! You are the HR interviewer. Immediately ask the first question: Please tell me about yourself."
         )
         await openai_ws.send(json.dumps({
             "type": "response.create",

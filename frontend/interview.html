@@ -417,8 +417,8 @@
               if (!kickoffSent && ws && ws.readyState === WebSocket.OPEN) {
                 const greeting = getGreeting(lang);
                 const instr = lang === 'ru'
-                  ? `${greeting}! Сразу задай первый вопрос: Расскажите, пожалуйста, о себе.`
-                  : `${greeting}! Immediately ask the first question: Please tell me about yourself.`;
+                  ? `${greeting}! Ты HR-интервьюер. Сразу задай первый вопрос: Расскажите, пожалуйста, о себе.`
+                  : `${greeting}! You are the HR interviewer. Immediately ask the first question: Please tell me about yourself.`;
                 sendClientEvent({
                   type: 'response.create',
                   response: { modalities: ['audio','text'], instructions: instr }
@@ -454,8 +454,8 @@
             // После окончания речи инициируем обработку и запрашиваем ответ модели
             sendClientEvent({ type: 'input_audio_buffer.commit' });
             const followInstr = lang === 'ru'
-              ? 'Проанализируй ответ кандидата и задай следующий вопрос интервью по сценарию.'
-              : 'Analyze the candidate\'s response and ask the next interview question according to the scenario.';
+              ? 'Ты HR-интервьюер. Проанализируй ответ кандидата и задай следующий вопрос интервью по сценарию.'
+              : 'You are the HR interviewer. Analyze the candidate\'s response and ask the next interview question according to the scenario.';
             sendClientEvent({
               type: 'response.create',
               response: { modalities: ['audio','text'], instructions: followInstr }
