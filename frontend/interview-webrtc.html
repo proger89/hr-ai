@@ -1,114 +1,165 @@
 <!doctype html>
 <html lang="ru">
-<head>
-  <meta charset="utf-8" />
-  <title>AI HR — Voice Interview</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body { font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; }
-    .progress { height: 8px; background: #eee; border-radius: 6px; overflow: hidden; margin: 12px 0 8px; }
-    .bar { height: 100%; width: 0%; background: #21a366; transition: width .25s; }
-    .mic { width: 14px; height: 14px; border-radius: 50%; display: inline-block; margin-left: 6px; background: #ccc; vertical-align: middle; }
-    .mic.on { background: #d90000; }
-    .log { white-space: pre-wrap; background:#fafafa; border:1px solid #eee; padding:8px; border-radius:6px; height: 180px; overflow:auto;}
-  </style>
-  <script type="module">
-    import { RealtimeAgent, RealtimeSession, tool } from 'https://cdn.jsdelivr.net/npm/@openai/agents-realtime@latest/dist/index.min.js';
-    import { z } from 'https://cdn.jsdelivr.net/npm/zod@3/dist/index.min.js';
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Интервью (Voice Agents)</title>
+    <style>
+      :root{--accent:#3b5bdb;--bg:#0f0f1e;--text:#ffffff}
+      *{box-sizing:border-box}
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;margin:0;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;overflow:hidden}
+      .bg-grad{background:radial-gradient(ellipse at center,#1a1a3e 0%,#0f0f1e 100%);position:fixed;inset:0;z-index:-1}
+      .center-container{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+      .wave-container{width:420px;height:200px;position:relative;margin:40px 0}
+      #waveCanvas{width:100%;height:100%}
+      .progress-container{width:100%;max-width:520px;margin:20px 0}
+      .progress{height:6px;background:rgba(255,255,255,0.12);border-radius:3px;overflow:hidden}
+      .progress-bar{height:100%;background:var(--accent);transition:width .3s ease}
+      .status-text{font-size:18px;color:rgba(255,255,255,0.85);text-align:center;margin:20px 0;min-height:30px}
+      .exit-btn{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:12px 32px;border-radius:30px;cursor:pointer;transition:all .3s;backdrop-filter:blur(10px)}
+      .exit-btn:hover{background:rgba(255,255,255,0.16);border-color:rgba(255,255,255,0.3)}
+      .mic-indicator{position:fixed;top:20px;right:20px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;transition:all .3s}
+      .mic-indicator.active{background:rgba(239,68,68,0.2);box-shadow:0 0 0 2px rgba(239,68,68,0.5)}
+      .connection-status{position:fixed;top:20px;left:20px;display:flex;align-items:center;gap:8px;padding:8px 16px;background:rgba(255,255,255,0.1);border-radius:20px;font-size:14px}
+      .connection-dot{width:8px;height:8px;border-radius:50%;background:#fbbf24}
+      .connection-dot.connected{background:#10b981}
+      .connection-dot.error{background:#ef4444}
+      .debug-console{position:fixed;bottom:100px;right:20px;width:300px;max-height:200px;background:rgba(0,0,0,0.8);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:10px;font-family:monospace;font-size:12px;overflow-y:auto;display:none}
+      .debug-console.show{display:block}
+      .debug-line{margin:2px 0;color:#10b981}
+    </style>
+    <script type="module">
+      import { RealtimeAgent, RealtimeSession, tool } from 'https://cdn.jsdelivr.net/npm/@openai/agents-realtime@latest/+esm';
+      import { z } from 'https://cdn.jsdelivr.net/npm/zod@3.23.8/+esm';
 
-    const $log = () => document.getElementById('log');
-    const $bar = () => document.getElementById('bar');
-    const $mic = () => document.getElementById('mic');
-    const $q   = () => document.getElementById('q');
-
-    const qs = new URLSearchParams(location.search);
-    const vacancy_id  = Number(qs.get('vacancy_id') || 1);
-    const interview_id= Number(qs.get('interview_id') || 0);
-    const lang = (qs.get('lang') || 'ru').toLowerCase();
-
-    function log(s){ const n=$log(); n.textContent += s + "\n"; n.scrollTop = n.scrollHeight; }
-
-    const state = { totalSteps: 6, asked: 0, awaitingAnswer: false, firstKickoffDone: false };
-
-    const questionAsked = tool({
-      name: 'question_asked',
-      description: 'Increment local progress when a question is SPOKEN.',
-      parameters: z.object({
-        section: z.enum(['intro','experience','stack','cases','communication','final']),
-        text: z.string()
-      }),
-      async execute({ section, text }) {
-        if (!state.awaitingAnswer) {
-          state.awaitingAnswer = true;
-          state.asked = Math.min(state.asked + 1, state.totalSteps);
-          $bar().style.width = Math.round(100 * state.asked / state.totalSteps) + '%';
-          $q().textContent = `Вопросы: ${state.asked}/${state.totalSteps}`;
-          log(`ИИ: ${text}`);
+      // Canvas wave
+      const canvas = document.createElement('canvas');
+      canvas.id = 'waveCanvas';
+      const ctx = canvas.getContext('2d');
+      let audioLevel = 0, targetLevel = 0.1;
+      function mountCanvas(){
+        const box = document.querySelector('.wave-container');
+        if (!box) return; if (!box.contains(canvas)) box.appendChild(canvas);
+        canvas.width = box.offsetWidth; canvas.height = box.offsetHeight;
+      }
+      window.addEventListener('resize', mountCanvas);
+      function draw(){
+        if (!ctx) return; ctx.clearRect(0,0,canvas.width,canvas.height);
+        audioLevel += (targetLevel - audioLevel) * 0.08;
+        ctx.beginPath(); ctx.moveTo(0, canvas.height/2);
+        for (let x=0; x<=canvas.width; x++){
+          const y = canvas.height/2 + Math.sin(x*0.02) * (20 + 40*audioLevel);
+          ctx.lineTo(x, y);
         }
-        return 'ok';
+        ctx.strokeStyle = `rgba(59,91,219,${0.35 + 0.45*audioLevel})`;
+        ctx.lineWidth = 2; ctx.stroke();
+        requestAnimationFrame(draw);
       }
-    });
+      requestAnimationFrame(draw);
 
-    const finishInterview = tool({
-      name: 'finish_interview',
-      description: 'Finish and redirect to result screen.',
-      parameters: z.object({}).optional(),
-      async execute() {
-        try { await fetch(`/api/report/finish?interview_id=${interview_id}`, { method:'POST' }); } catch {}
-        location.href = `/complete.html?id=${interview_id}`;
-        return 'ok';
+      const $ = (id)=>document.getElementById(id);
+      function debug(msg){ const el=$('debug'); const line=document.createElement('div'); line.className='debug-line'; line.textContent=new Date().toISOString().split('T')[1].slice(0,8)+' '+msg; el.appendChild(line); el.scrollTop=el.scrollHeight; }
+
+      const qs = new URLSearchParams(location.search);
+      const vacancy_id  = Number(qs.get('vacancy_id') || 1);
+      const interview_id= Number(qs.get('interview_id') || 0);
+      const lang = (qs.get('lang') || 'ru').toLowerCase();
+
+      const state = { total: 6, asked: 0, startedAt: Date.now() };
+      function setProgress(){
+        const pct = Math.round(100 * state.asked / Math.max(1, state.total));
+        $('progressBar').style.width = pct + '%';
+        $('progressText').textContent = `${state.asked} из ${state.total} вопросов`;
       }
-    });
+      setInterval(()=>{
+        const sec = Math.floor((Date.now()-state.startedAt)/1000);
+        $('timeText').textContent = `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`;
+      },1000);
 
-    const agent = new RealtimeAgent({
-      name: 'HR Agent',
-      instructions: `
-Говори только на ${lang === 'ru' ? 'русском' : 'английском'}.
-Строго один вопрос за раз. После вопроса молчи и жди ответа.
-Без коучинга и долгих монологов, только интервью по сценарию.`,
-      tools: [questionAsked, finishInterview]
-    });
+      // Tools via Agents SDK
+      const questionAsked = tool({
+        name:'question_asked',
+        description:'Increment progress when a question is SPOKEN.',
+        parameters: z.object({
+          section: z.enum(['intro','experience','stack','cases','communication','final']),
+          text: z.string()
+        }),
+        async execute({ section, text }){
+          state.asked = Math.min(state.asked + 1, state.total);
+          setProgress();
+          debug(`ИИ (${section}): ${text}`);
+          return 'ok';
+        }
+      });
+      const finishInterview = tool({
+        name:'finish_interview',
+        description:'Finish and redirect to result screen.',
+        parameters: z.object({}).optional(),
+        async execute(){
+          try{ await fetch(`/api/report/finish?interview_id=${interview_id}`, {method:'POST'}); }catch{}
+          location.href = `/complete.html?id=${interview_id}`;
+          return 'ok';
+        }
+      });
 
-    const session = new RealtimeSession(agent, {
-      model: 'gpt-realtime',
-      config: {
-        turnDetection: { type: 'semantic_vad', eagerness: 'low', createResponse: true, interruptResponse: true },
-        inputAudioTranscription: { model: 'gpt-4o-mini-transcribe' }
+      const agent = new RealtimeAgent({
+        name:'HR Agent',
+        instructions:`Говори только на ${lang==='ru'?'русском':'английском'}. Один вопрос за раз, затем жди ответа. Следуй сценарию.`,
+        tools:[questionAsked, finishInterview]
+      });
+      const session = new RealtimeSession(agent, {
+        model:'gpt-realtime',
+        config:{
+          turnDetection:{ type:'semantic_vad', eagerness:'low', createResponse:true, interruptResponse:true },
+          inputAudioTranscription:{ model:'gpt-4o-mini-transcribe' }
+        }
+      });
+
+      session.on('transport_event', (ev)=>{
+        if (ev?.type==='webrtc_state'){
+          const mic = $('micIndicator');
+          mic.classList.toggle('active', !!ev.micActive);
+          targetLevel = ev.micActive ? 0.8 : 0.1;
+        }
+      });
+
+      async function connectAndStart(){
+        $('connectionText').textContent = 'Запрос токена...';
+        const r = await fetch(`/api/voice/mint?vacancy_id=${vacancy_id}&interview_id=${interview_id}&lang=${lang}`);
+        const mint = await r.json();
+        if (!mint?.client_secret?.value) throw new Error('mint failed');
+        $('connectionText').textContent = 'Подключение...';
+        await session.connect({ apiKey: mint.client_secret.value });
+        $('connectionDot').classList.add('connected');
+        $('connectionText').textContent = 'Подключено';
+        mountCanvas();
+        await session.sendMessage(lang==='ru' ? 'Начни интервью с шага intro, задай первый вопрос и жди ответ.' : 'Start the interview with the intro step, ask the first question and wait.');
       }
-    });
 
-    session.on('transport_event', (ev) => {
-      if (ev?.type === 'webrtc_state' && ev.micActive !== undefined) {
-        $mic().classList.toggle('on', !!ev.micActive);
-      }
-    });
-
-    async function connectAndStart() {
-      log('Запрос токена…');
-      const r = await fetch(`/api/voice/mint?vacancy_id=${vacancy_id}&interview_id=${interview_id}&lang=${lang}`);
-      if (!r.ok) { throw new Error('mint failed: ' + r.status); }
-      const mint = await r.json();
-      log('Токен получен. Подключение WebRTC…');
-      await session.connect({ apiKey: mint.client_secret.value });
-      if (!state.firstKickoffDone) {
-        state.firstKickoffDone = true;
-        await session.sendMessage(
-          lang === 'ru' ? 'Начни интервью с шага intro, задай первый вопрос и жди ответ.'
-                        : 'Start the interview with the intro step, ask the first question and wait.'
-        );
-      }
-    }
-
-    connectAndStart().catch(e => log('Ошибка соединения: ' + (e?.message || e)));
-  </script>
-</head>
-<body>
-  <h2>Голосовое интервью</h2>
-  <div>Микрофон: <span id="mic" class="mic"></span></div>
-  <div class="progress"><div id="bar" class="bar"></div></div>
-  <div id="q">Вопросы: 0/6</div>
-  <div class="log" id="log"></div>
-</body>
+      window.addEventListener('load', ()=>{
+        setProgress(); connectAndStart().catch(e=>{ $('connectionDot').classList.add('error'); $('connectionText').textContent='Ошибка'; debug(e?.message||e); });
+        document.addEventListener('keydown', (e)=>{ if (e.ctrlKey && e.key==='d'){ e.preventDefault(); $('debug').classList.toggle('show'); } });
+        $('exitBtn').addEventListener('click', ()=>{ finishInterview.execute?.({}).catch(()=>{}); });
+      });
+    </script>
+  </head>
+  <body>
+    <div class="bg-grad"></div>
+    <div class="connection-status"><div class="connection-dot" id="connectionDot"></div><span id="connectionText">Подключение...</span></div>
+    <div class="mic-indicator" id="micIndicator">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+    </div>
+    <div class="center-container">
+      <div class="status-text fade-in" id="statusText">Подготовка к интервью...</div>
+      <div class="wave-container fade-in" style="animation-delay:0.2s"></div>
+      <div class="progress-container fade-in" style="animation-delay:0.4s">
+        <div class="progress"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:14px;color:rgba(255,255,255,0.6)"><span id="progressText">0 из 0 вопросов</span><span id="timeText">0:00</span></div>
+      </div>
+    </div>
+    <button class="exit-btn" id="exitBtn">Завершить интервью</button>
+    <div class="debug-console" id="debug"></div>
+  </body>
 </html>
 
 
