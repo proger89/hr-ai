@@ -126,8 +126,21 @@
           // Сохраняем язык
           localStorage.setItem('interviewLang', speechSel.value);
           
-          // Переходим на страницу интервью
-          location.href = '/interview.html';
+          // Параметры из текущего URL: cid (candidate id), vid (vacancy id)
+          const urlParams = new URLSearchParams(window.location.search);
+          const cid = urlParams.get('cid') || localStorage.getItem('currentCandidateId') || '';
+          const vid = urlParams.get('vid') || urlParams.get('vacancy_id') || '1';
+          const langParam = (uiSel.value || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en';
+
+          if (!cid) {
+            alert('Не найден идентификатор кандидата (cid). Проверьте ссылку.');
+            btnStart.disabled = false;
+            btnStart.innerHTML = btnStart.textContent;
+            return;
+          }
+
+          // Переходим на новую страницу WebRTC-интервью с корректными параметрами
+          location.href = `/interview-webrtc.html?vacancy_id=${encodeURIComponent(vid)}&interview_id=${encodeURIComponent(cid)}&lang=${langParam}`;
           
         } catch (err) {
           alert('Ошибка: ' + (err?.message || String(err)));

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Интервью (Agents SDK, экспериментально)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <style>
+      :root{--accent:#22c55e;--bg:#0f0f1e;--text:#ffffff;--wave:#22c55e}
+      *{box-sizing:border-box}
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;margin:0;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;overflow:hidden}
+      .bg-grad{background: radial-gradient(ellipse at center, #112019 0%, #0f0f1e 100%);position: fixed;inset: 0;z-index: -1}
+      .center-container{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+      .wave-container{width:400px;height:200px;position:relative;margin:40px 0}
+      #waveCanvas{width:100%;height:100%}
+      .progress-container{width:100%;max-width:500px;margin:20px 0}
+      .progress{height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden}
+      .progress-bar{height:100%;background:var(--accent);transition:width 0.3s ease}
+      .status-text{font-size:18px;color:rgba(255,255,255,0.8);text-align:center;margin:20px 0;min-height:30px}
+      .exit-btn{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;padding:12px 32px;border-radius:30px;cursor:pointer;transition:all 0.3s;backdrop-filter:blur(10px)}
+      .exit-btn:hover{background:rgba(255,255,255,0.2);border-color:rgba(255,255,255,0.3)}
+      .mic-indicator{position:fixed;top:20px;right:20px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;transition:all 0.3s}
+      .mic-indicator.active{background:rgba(34,197,94,0.2);box-shadow:0 0 0 2px rgba(34,197,94,0.5)}
+      .connection-status{position:fixed;top:20px;left:20px;display:flex;align-items:center;gap:8px;padding:8px 16px;background:rgba(255,255,255,0.1);border-radius:20px;font-size:14px}
+      .connection-dot{width:8px;height:8px;border-radius:50%;background:#fbbf24}
+      .connection-dot.connected{background:#10b981}
+      .connection-dot.error{background:#ef4444}
+      .debug-console{position: fixed;bottom: 100px;right: 20px;width: 300px;max-height: 200px;background: rgba(0,0,0,0.8);border: 1px solid rgba(255,255,255,0.2);border-radius: 8px;padding: 10px;font-family: monospace;font-size: 12px;overflow-y: auto;display: none}
+      .debug-console.show{display:block}
+      .debug-line{margin: 2px 0;color: #10b981}
+    </style>
+    <!-- Попытка загрузить Agents Realtime SDK (опционально) -->
+    <script async src="https://cdn.jsdelivr.net/npm/zod@3/dist/zod.min.js"></script>
+    <script async src="https://unpkg.com/@openai/agents-realtime/dist/browser/index.js"></script>
+  </head>
+  <body>
+    <div class="bg-grad"></div>
+    <div class="connection-status"><div class="connection-dot" id="connectionDot"></div><span id="connectionText">Подключение...</span></div>
+    <div class="mic-indicator" id="micIndicator">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff">
+        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+      </svg>
+    </div>
+    <div class="center-container">
+      <div class="status-text" id="statusText">Подготовка к интервью...</div>
+      <div class="wave-container"><canvas id="waveCanvas"></canvas></div>
+      <div class="progress-container">
+        <div class="progress"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:14px;color:rgba(255,255,255,0.6)">
+          <span id="progressText">0 из 0 вопросов</span>
+          <span id="timeText">0:00</span>
+        </div>
+      </div>
+    </div>
+    <button class="exit-btn" id="exitBtn">Завершить интервью</button>
+    <div class="debug-console" id="debugConsole"></div>
+    <audio id="assistantAudio" autoplay style="display:none"></audio>
+
+    <script>
+      // ===== Визуализация =====
+      const canvas = document.getElementById('waveCanvas');
+      const ctx = canvas.getContext('2d');
+      function resizeCanvas(){ const p=canvas.parentElement; canvas.width=p.offsetWidth; canvas.height=p.offsetHeight; }
+      resizeCanvas(); window.addEventListener('resize', resizeCanvas);
+      const waves=[]; const waveCount=5; let animationId=null; let audioLevel=0, targetAudioLevel=0;
+      for(let i=0;i<waveCount;i++){ waves.push({amplitude:20+Math.random()*30,frequency:0.01+Math.random()*0.02,phase:Math.random()*Math.PI*2,speed:0.01+Math.random()*0.02,opacity:0.1+Math.random()*0.3}); }
+      function drawWave(w){ ctx.beginPath(); ctx.moveTo(0, canvas.height/2); for(let x=0;x<=canvas.width;x++){ const y = canvas.height/2 + Math.sin(x*w.frequency + w.phase)*w.amplitude*(0.3+audioLevel*0.7); ctx.lineTo(x,y);} ctx.strokeStyle=`rgba(34,197,94, ${w.opacity*(0.5+audioLevel*0.5)})`; ctx.lineWidth=2; ctx.stroke(); w.phase+=w.speed*(1+audioLevel*2); }
+      function animate(){ ctx.clearRect(0,0,canvas.width,canvas.height); audioLevel+=(targetAudioLevel-audioLevel)*0.1; waves.forEach(drawWave); animationId=requestAnimationFrame(animate); }
+      function setWaveLevel(l){ targetAudioLevel=Math.max(0,Math.min(1,l)); }
+      animate();
+
+      // ===== UI refs =====
+      const statusText=document.getElementById('statusText');
+      const progressBar=document.getElementById('progressBar');
+      const progressText=document.getElementById('progressText');
+      const timeText=document.getElementById('timeText');
+      const exitBtn=document.getElementById('exitBtn');
+      const micIndicator=document.getElementById('micIndicator');
+      const connectionDot=document.getElementById('connectionDot');
+      const connectionText=document.getElementById('connectionText');
+      const debugConsole=document.getElementById('debugConsole');
+      const assistantAudio=document.getElementById('assistantAudio');
+      function debug(msg){ console.log(msg); const d=document.createElement('div'); d.className='debug-line'; d.textContent=new Date().toISOString().split('T')[1].slice(0,8)+' '+msg; debugConsole.appendChild(d); debugConsole.scrollTop=debugConsole.scrollHeight; }
+      document.addEventListener('keydown',(e)=>{ if(e.ctrlKey&&e.key==='d'){ e.preventDefault(); debugConsole.classList.toggle('show'); }});
+      function setConnectionStatus(st, text){ connectionText.textContent=text; connectionDot.className='connection-dot'; if(st==='connected') connectionDot.classList.add('connected'); else if(st==='error') connectionDot.classList.add('error'); }
+      function setProgress(cur,total){ const pct=Math.round(100*cur/Math.max(1,total)); progressBar.style.width=pct+'%'; progressText.textContent=`${cur} из ${total} вопросов`; }
+
+      // ===== Состояния =====
+      const qs = new URLSearchParams(location.search);
+      const state = {
+        answeredPrimary: 0,
+        totalPrimary: 5,
+        minPrimaryRequired: 3,
+        interviewId: qs.get('interview_id') || qs.get('candidate_id') || 'test',
+        vacancyId: Number(qs.get('vacancy_id')) || 1,
+        lang: (qs.get('lang') || 'ru').toLowerCase()
+      };
+
+      let pc=null, dc=null, remoteStream=null, micStream=null, isConnected=false;
+      let awaitingAnswer=false, assistantSpeaking=false, lastQuestionText="", questionCutApplied=false;
+      let wdTimer=null, qMarkTimer=null; const MIN_ANSWER_MS=1500, MIN_ANSWER_WORDS=5; let audioOutStarted=false;
+      let userAnswerEligible=false;
+      let turnIdx=0, turnStart=null, turnSegs=[], turnWords=0, turnRmsSum=0, turnRmsCnt=0;
+
+      function fadeVolumeTo(target,durationMs){ try{ const startVol=assistantAudio.volume??1; const startAt=performance.now(); const step=(t)=>{ const p=Math.min(1,(t-startAt)/Math.max(1,durationMs)); assistantAudio.volume=startVol+(target-startVol)*p; if(p<1) requestAnimationFrame(step); }; requestAnimationFrame(step);}catch{}}
+      function softCutQuestion(){ if(questionCutApplied) return; questionCutApplied=true; awaitingAnswer=true; if(wdTimer){clearTimeout(wdTimer); wdTimer=null;} fadeVolumeTo(0,220); setTimeout(()=>{ sendEvent({ type:'response.cancel' }); assistantSpeaking=false; setWaveLevel(0); },230); }
+
+      // ===== Основной запуск =====
+      async function start(){
+        try{
+          setConnectionStatus('','Подключение...'); statusText.textContent='Инициализация...';
+          // init
+          await fetch(`/api/interviews/${state.interviewId}/init`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ vacancy_id: state.vacancyId, lang: state.lang }) });
+          // token
+          const tr = await fetch(`/api/va/token`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ vacancy_id: state.vacancyId, interview_id: state.interviewId, lang: state.lang }) });
+          if(!tr.ok) throw new Error('Token request failed: '+tr.status);
+          const tj = await tr.json(); const clientSecret = tj?.client_secret?.value; if(!clientSecret) throw new Error('No client secret');
+          state.totalPrimary = tj?.metadata?.total_primary || state.totalPrimary; setProgress(0, state.totalPrimary);
+
+          statusText.textContent='Подключение к OpenAI...';
+          pc = new RTCPeerConnection({ iceServers:[{ urls:'stun:stun.l.google.com:19302' }] });
+          remoteStream = new MediaStream(); assistantAudio.srcObject=remoteStream;
+          pc.ontrack=(e)=>{ remoteStream.addTrack(e.track); if(e.track.kind==='audio'){ setWaveLevel(0.5);} };
+          dc = pc.createDataChannel('oai-events', { ordered:true });
+          dc.onopen=()=>{ debug('Data channel opened'); isConnected=true; setConnectionStatus('connected', state.lang==='ru'?'Подключено':'Connected'); statusText.textContent= state.lang==='ru'?'Готов к интервью':'Ready for interview';
+            // Kickoff
+            const introInstr = state.lang.startsWith('ru')
+              ? "Начни интервью: коротко поприветствуй и СРАЗУ задай ПЕРВЫЙ первичный вопрос по сценарию. Перед озвучиванием CALL question_asked({is_primary:true}). Заверши вопрос символом ⟂."
+              : "Start the interview: greet briefly and IMMEDIATELY ask the FIRST primary question. Before speaking, CALL question_asked({is_primary:true}). End the question with ⟂.";
+            sendEvent({ type:'response.create', response:{ modalities:['audio','text'], instructions: introInstr } });
+            if(window.__kickTimer) clearTimeout(window.__kickTimer);
+            window.__kickTimer = setTimeout(()=>{ if(!assistantSpeaking && !awaitingAnswer){ debug('Kickoff fallback fired'); sendEvent({ type:'response.create', response:{ modalities:['audio','text'], instructions: introInstr } }); } }, 2000);
+          };
+          dc.onmessage = (e)=> onEvent(e);
+          dc.onerror = (e)=> debug('Data channel error: '+e);
+          dc.onclose = ()=>{ debug('Data channel closed'); isConnected=false; };
+
+          // Mic
+          statusText.textContent='Запрос доступа к микрофону...';
+          micStream = await navigator.mediaDevices.getUserMedia({ audio:{ channelCount:1, echoCancellation:true, noiseSuppression:true, autoGainControl:false }});
+          const audioContext = new (window.AudioContext||window.webkitAudioContext)();
+          const gateGain = audioContext.createGain(); gateGain.gain.value=0;
+          const micSourceForSend = audioContext.createMediaStreamSource(micStream);
+          const sendDestination = audioContext.createMediaStreamDestination(); micSourceForSend.connect(gateGain).connect(sendDestination);
+          const processedTrack = sendDestination.stream.getAudioTracks()[0]; pc.addTrack(processedTrack, sendDestination.stream);
+
+          const analyser = audioContext.createAnalyser(); const analysisStream = micStream.clone(); const microphone = audioContext.createMediaStreamSource(analysisStream); microphone.connect(analyser);
+          analyser.fftSize=256; const bufferLength=analyser.frequencyBinCount; const dataArray=new Uint8Array(bufferLength);
+          function checkMicLevel(){ analyser.getByteFrequencyData(dataArray); const avg=dataArray.reduce((a,b)=>a+b)/bufferLength; setWaveLevel(Math.min(1,Math.max(0,avg/80))); requestAnimationFrame(checkMicLevel);} checkMicLevel();
+          const ensureActivation = ()=>{ try{ if(audioContext.state==='suspended') audioContext.resume(); }catch{} try{ assistantAudio.play().catch(()=>{});}catch{} }; document.addEventListener('click', ensureActivation, { once:true }); document.addEventListener('keydown', ensureActivation, { once:true });
+
+          // VAD gate (configurable)
+          const GATE_ON_THR = Number(qs.get('vad_on')) || 0.012; // softer by default
+          const GATE_OFF_THR = Number(qs.get('vad_off')) || 0.008;
+          const HOLD_ON_MS  = Number(qs.get('hold_on')) || 180;
+          const HOLD_OFF_MS = Number(qs.get('hold_off')) || 600;
+          const framesPerMs = audioContext.sampleRate / 1000; const ON_FR=Math.max(1, Math.floor(HOLD_ON_MS*framesPerMs/1024)); const OFF_FR=Math.max(1, Math.floor(HOLD_OFF_MS*framesPerMs/1024));
+          const gateProcessor = audioContext.createScriptProcessor(1024,1,1); const nullGain = audioContext.createGain(); nullGain.gain.value=0;
+          let gateOpen=false, speakFrames=0, silentFrames=0; let _turnStart=null; let _turnSegs=[]; let _turnWords=0; let _rmsSum=0, _rmsCnt=0;
+          gateProcessor.onaudioprocess=(e)=>{
+            if(assistantSpeaking){ if(gateGain.gain.value!==0) gateGain.gain.value=0; micIndicator.classList.remove('active'); return; }
+            const d=e.inputBuffer.getChannelData(0); let s=0; for(let i=0;i<d.length;i++) s+=d[i]*d[i]; const rms=Math.sqrt(s/d.length); _rmsSum+=rms; _rmsCnt++;
+            if(!gateOpen){ if(rms>GATE_ON_THR){ speakFrames++; if(speakFrames>=ON_FR){ gateOpen=true; gateGain.gain.value=1; silentFrames=0; micIndicator.classList.add('active'); if(!_turnStart) _turnStart=performance.now(); _turnSegs.push({s:performance.now()}); }} else { speakFrames=0; }}
+            else { if(rms<GATE_OFF_THR){ silentFrames++; if(silentFrames>=OFF_FR){ gateOpen=false; gateGain.gain.value=0; speakFrames=0; micIndicator.classList.remove('active'); const last=_turnSegs[_turnSegs.length-1]; if(last && !last.e) last.e=performance.now(); const end=performance.now(); const speechMs=Math.round(_turnSegs.reduce((acc,seg)=>acc+Math.max(0,(seg.e||end)-(seg.s||end)),0)); if(speechMs>=MIN_ANSWER_MS) userAnswerEligible=true; }} else { silentFrames=0; }} };
+          microphone.connect(gateProcessor); gateProcessor.connect(nullGain); nullGain.connect(audioContext.destination);
+
+          // Offer/Answer
+          statusText.textContent='Установка соединения...'; const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+          const model='gpt-realtime';
+          const sdpResp = await fetch(`https://api.openai.com/v1/realtime?model=${model}`, { method:'POST', body: offer.sdp, headers:{ Authorization:`Bearer ${clientSecret}`, 'Content-Type':'application/sdp' }});
+          if(!sdpResp.ok) throw new Error('SDP exchange failed: '+sdpResp.status); const answerSdp = await sdpResp.text(); const answer={ type:'answer', sdp: answerSdp }; await pc.setRemoteDescription(answer);
+          pc.oniceconnectionstatechange = ()=>{ if(pc.iceConnectionState==='connected'){ statusText.textContent = state.lang==='ru'?'Интервью началось':'Interview started'; try{ assistantAudio.play().catch(()=>{});}catch{} } };
+        }catch(err){ console.error(err); setConnectionStatus('error','Ошибка'); statusText.textContent='Ошибка инициализации: '+err.message; }
+      }
+
+      function sendEvent(evt){ if(dc && dc.readyState==='open'){ debug('Sending: '+evt.type); dc.send(JSON.stringify(evt)); } }
+
+      async function onEvent(msg){
+        try{
+          const data = JSON.parse(msg.data); debug('Received: '+data.type);
+          if(data.type==='response.function_call_arguments.done'){
+            const fn=data.name; const args = data.arguments ? JSON.parse(data.arguments) : {};
+            if(fn==='question_asked'){
+              awaitingAnswer=true; if(wdTimer){ clearTimeout(wdTimer); wdTimer=null; }
+              const r = await fetch(`/api/interviews/${state.interviewId}/mark`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ is_primary: !!args.is_primary }) });
+              const pj = await r.json(); setProgress(pj.current, pj.total);
+              return sendEvent({ type:'response.function_call_output', call_id: data.call_id, output: JSON.stringify({ status:'ok' }) });
+            }
+            if(fn==='extract_facts'){
+              await fetch(`/api/interviews/${state.interviewId}/facts`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ section: args.section, facts: args.facts || [] }) });
+              return sendEvent({ type:'response.function_call_output', call_id: data.call_id, output: JSON.stringify({ status:'facts_saved' }) });
+            }
+            if(fn==='end_interview'){
+              if(state.answeredPrimary < state.minPrimaryRequired){ return sendEvent({ type:'response.function_call_output', call_id: data.call_id, output: JSON.stringify({ status:'too_early' }) }); }
+              const r = await fetch(`/api/interviews/${state.interviewId}/finalize`, { method:'POST' }); const fj = await r.json();
+              sendEvent({ type:'response.function_call_output', call_id: data.call_id, output: JSON.stringify({ status:'completed', decision: fj.decision }) });
+              if(fj.redirect_url){ statusText.textContent='Завершение интервью...'; setTimeout(()=>{ location.replace(fj.redirect_url); }, 1500); }
+              return;
+            }
+          }
+
+          if(data.type==='response.created' && awaitingAnswer){ if(userAnswerEligible){ awaitingAnswer=false; userAnswerEligible=false; } else { sendEvent({ type:'response.cancel' }); return; } }
+
+          if(data.type==='response.created'){
+            assistantSpeaking=true; questionCutApplied=false; lastQuestionText=''; audioOutStarted=false; window.__assistantStartedAt=performance.now(); setWaveLevel(0.8); try{ assistantAudio.volume=1; }catch{}
+            if(turnStart && turnSegs.length){ const end=performance.now(); const speechMs=Math.round(turnSegs.reduce((acc,seg)=>acc+Math.max(0,(seg.e||end)-(seg.s||end)),0)); const words=turnWords;
+              if(awaitingAnswer && (speechMs<MIN_ANSWER_MS || words<MIN_ANSWER_WORDS)){ sendEvent({ type:'response.cancel' }); const instr = state.lang.startsWith('ru') ? 'Ваш ответ был слишком кратким. Поясните, пожалуйста, чуть подробнее (1–2 предложения).' : 'Your answer was too brief. Please add 1–2 more sentences with details.'; sendEvent({ type:'response.create', response:{ modalities:['audio','text'], instructions: instr } }); } else { awaitingAnswer=false; }
+              const payload={ turn_index: turnIdx++, speech_ms: speechMs, segments: turnSegs.map(x=>({s: Math.round((x.s-turnStart)||0), e: Math.round(((x.e||end)-turnStart)||0)})), words: turnWords, rms_mean: turnRmsCnt?(turnRmsSum/turnRmsCnt):null, rms_var:null };
+              fetch(`/api/interviews/${state.interviewId}/turn`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }).catch(()=>{});
+              turnStart=null; turnSegs=[]; turnWords=0; turnRmsSum=0; turnRmsCnt=0;
+            }
+          }
+
+          if(data.type==='response.output_audio.done' || data.type==='response.audio.done' || data.type==='response.done'){
+            setTimeout(()=>{ assistantSpeaking=false; },150); setWaveLevel(0);
+            if(wdTimer){ clearTimeout(wdTimer); wdTimer=null; }
+            wdTimer = setTimeout(()=>{ if(!awaitingAnswer && !assistantSpeaking && state.answeredPrimary < state.totalPrimary){ const instr = state.lang.startsWith('ru') ? 'Продолжи интервью. Сформулируй СЛЕДУЮЩИЙ первичный вопрос. Перед озвучиванием CALL question_asked({is_primary:true}). Заверши вопрос символом ⟂.' : 'Continue the interview. Ask the NEXT primary question. Before speaking CALL question_asked({is_primary:true}). End the question with ⟂.'; sendEvent({ type:'response.create', response:{ modalities:['audio','text'], instructions: instr } }); } }, 2600);
+          }
+          if(data.type==='output_audio_buffer.started'){ audioOutStarted=true; assistantSpeaking=true; try{ assistantAudio.volume=1; }catch{} }
+          if(data.type==='output_audio_buffer.stopped'){ assistantSpeaking=false; setWaveLevel(0); }
+          if(data.type==='conversation.item.input_audio_transcription.completed'){ const wc=(data.transcript||'').trim().split(/\s+/).filter(Boolean).length; turnWords+=wc; console.log('Вы:',data.transcript); if(turnWords>=MIN_ANSWER_WORDS) userAnswerEligible=true; }
+          if(data.type==='response.audio_transcript.delta'){
+            const chunk=data.delta||''; if(chunk) lastQuestionText+=chunk; const enoughAudio = audioOutStarted;
+            const trimmed=(lastQuestionText||'').trim(); if(!questionCutApplied && enoughAudio){ if(trimmed.includes('⟂')){ if(qMarkTimer){clearTimeout(qMarkTimer); qMarkTimer=null;} softCutQuestion(); return; } const endsWithQ = /[?？！]$/.test(trimmed); if(endsWithQ){ if(qMarkTimer){clearTimeout(qMarkTimer); qMarkTimer=null;} qMarkTimer=setTimeout(()=>{ if(!questionCutApplied) softCutQuestion(); },800); } else if(qMarkTimer){ clearTimeout(qMarkTimer); qMarkTimer=null; } }
+          } else if(data.type==='response.output_text.delta' || data.type==='response.text.delta'){
+            const chunk=data.text||''; if(chunk) lastQuestionText+=chunk;
+          }
+        }catch(err){ console.error('Event error:', err); }
+      }
+
+      exitBtn.addEventListener('click', ()=>{ if(confirm(state.lang==='ru'?'Вы уверены, что хотите завершить интервью?':'End the interview?')){ try{ if(pc) pc.close(); }catch{} try{ if(micStream) micStream.getTracks().forEach(t=>t.stop()); }catch{} setTimeout(()=>{ location.href=`/complete.html?id=${state.interviewId}`; }, 800); }});
+      window.addEventListener('load', start);
+      window.addEventListener('beforeunload', ()=>{ try{ if(pc) pc.close(); }catch{} try{ if(micStream) micStream.getTracks().forEach(t=>t.stop()); }catch{} if(animationId) cancelAnimationFrame(animationId); });
+
+      // ===== Optional: лог только факта наличия SDK (пока не используем для стабильности) =====
+      setTimeout(()=>{ const hasSDK = !!(window.OpenAIAgentsRealtime || window['agents-realtime']); if(hasSDK){ debug('Agents Realtime SDK detected (not enforced)'); } }, 1000);
+    </script>
+  </body>
+</html>
+
+

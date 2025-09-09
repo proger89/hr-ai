@@ -19,11 +19,14 @@ from .routers import embeddings
 from .routers import vacancies
 from .routers import stats
 from .routers import voip
+from .routers import voice_agents
 from .routers import metrics
 from .routers import tasks as tasks_router
 from .routers import audit
 from .routers import notify
 from .routers import realtime
+from .routers import va
+from .routers import interview
 from .db import engine, Base, SessionLocal
 from sqlalchemy import text
 from .config import settings
@@ -107,11 +110,14 @@ app.include_router(embeddings.router)
 app.include_router(vacancies.router)
 app.include_router(stats.router)
 app.include_router(voip.router)
+app.include_router(voice_agents.router)
 app.include_router(notify.router)
 app.include_router(metrics.router)
 app.include_router(audit.router)
 app.include_router(tasks_router.router)
 app.include_router(realtime.router)
+app.include_router(va.router)
+app.include_router(interview.router)
 
 
 @app.on_event("shutdown")

@@ -30,7 +30,8 @@ def get_greeting(lang: str) -> str:
 # Конфигурация
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 # Валидная Realtime‑модель по умолчанию (можно переопределить через ENV)
-REALTIME_MODEL = os.getenv("REALTIME_MODEL", "gpt-4o-realtime-preview-2024-12-17")
+# Для миграции на GPT‑5 используем новое имя модели, если задано в окружении
+REALTIME_MODEL = os.getenv("REALTIME_MODEL", "gpt-realtime")
 REALTIME_WS_URL = "wss://api.openai.com/v1/realtime"
 
 
@@ -48,6 +49,15 @@ class RealtimeSession:
         self.current_question = 0
         self.ws_connection = None
         self.context = {}
+        # Для трекинга состояния
+        self.active_response_id = None
+        self.assistant_speaking = False
+        self.question_marked = False
+        self.answered_primary = 0
+        self.user_speaking_ms = 0
+        self.lang = "ru"
+        self.min_primary_required = 3
+        self.min_dialog_ms = 60000  # 60 секунд речи кандидата
         
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -185,16 +195,16 @@ def create_session_config(
                 "format": "pcm16",
                 "sample_rate": 24000,
                 "turn_detection": {
-                    "type": "semantic_vad",
-                    "create_response": False,
-                    "threshold": 0.75,
-                    "silence_duration_ms": 1500
+                    "type": "server_vad",
+                    "threshold": 0.5,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 700
                 }
             },
             "output": {
                 "format": "pcm16",
                 "sample_rate": 24000,
-                "voice": "alloy",
+                "voice": output_voice,
                 "speed": 1.0
             }
         },
@@ -283,6 +293,34 @@ def get_ws_headers() -> Dict[str, str]:
     }
 
 
+async def score_and_finalize(session: RealtimeSession) -> Dict[str, Any]:
+    """Финальный скоринг и подготовка результатов"""
+    overall_score = session.context.get("overall_score", 0)
+    recommendation = session.context.get("recommendation", "maybe")
+    passed = session.context.get("passed", False)
+    
+    # Определяем decision
+    if recommendation == "hire":
+        decision = "hired"
+    elif recommendation == "maybe" and overall_score >= 70:
+        decision = "maybe"
+    else:
+        decision = "rejected"
+    
+    # Формируем redirect_url
+    redirect_url = f"/complete.html?score={overall_score}&passed={1 if passed else 0}&decision={decision}"
+    
+    return {
+        "decision": decision,
+        "overall_score": overall_score,
+        "redirect_url": redirect_url,
+        "recommendation": recommendation,
+        "strengths": session.context.get("strengths", []),
+        "weaknesses": session.context.get("weaknesses", []),
+        "scores": session.scores
+    }
+
+
 async def handle_function_call(
     session: RealtimeSession,
     function_name: str,
@@ -306,6 +344,19 @@ async def handle_function_call(
         }
         
     elif function_name == "end_interview":
+        # Проверяем пороги перед завершением
+        if session.answered_primary < session.min_primary_required:
+            return {
+                "status": "ignored",
+                "message": f"Слишком рано для завершения. Нужно ещё {session.min_primary_required - session.answered_primary} вопросов"
+            }
+        
+        if session.user_speaking_ms < session.min_dialog_ms:
+            return {
+                "status": "ignored",
+                "message": f"Недостаточно диалога. Нужно ещё {(session.min_dialog_ms - session.user_speaking_ms) // 1000} секунд речи"
+            }
+        
         # Завершаем интервью
         overall_score = arguments.get("overall_score", 50)
         strengths = arguments.get("strengths", [])

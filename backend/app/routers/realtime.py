@@ -20,6 +20,7 @@ from ..services.realtime_service import (
     create_session_config,
     get_ws_headers,
     handle_function_call,
+    score_and_finalize,
     REALTIME_WS_URL,
     REALTIME_MODEL
 )
@@ -154,11 +155,19 @@ async def realtime_websocket(
         # Создаем сессию
         session_id = str(uuid.uuid4())
         realtime_session = RealtimeSession(session_id, str(cand_id), vacancy_id)
+        realtime_session.scenario = scenario  # Сохраняем сценарий в сессии
         realtime_sessions[session_id] = realtime_session
         # Проставим количество вопросов по сценарию, если он задан
         if scenario and isinstance(scenario, list):
             try:
-                realtime_session.total_questions = max(1, min(5, len(scenario)))
+                # Подсчитываем только первичные вопросы (все кроме intro и final)
+                primary_count = 0
+                for q in scenario:
+                    if isinstance(q, dict):
+                        competence = q.get("competence", "")
+                        if competence and competence not in ["intro", "final"]:
+                            primary_count += 1
+                realtime_session.total_questions = max(1, primary_count or len(scenario))
             except Exception:
                 pass
         
@@ -239,9 +248,9 @@ async def realtime_websocket(
                 q_text = (q0.get("question") or "").strip() or None
         greet = get_greeting(candidate_lang)
         ru_instr = (
-            f"{greet}! Ты HR-интервьюер. Сразу задай первый вопрос: {q_text}. Затем вызови tool `question_asked` с index=1."
+            f"{greet}! Ты HR-интервьюер.Твоя задача - задать все вопросы сценария собеседнику, обязательно выслушать его ответы до конца. НЕ ОТВЛЕКАЙСЯ НА СТОРОННИЕ ТЕМЫ В БЕСЕДЕ, СФОКУСИРУЙСЯ НА ИНТЕРВЬЮ О КОНКРЕТНОЙ. Ты должна задавать чаще вопрос - а не говорить самой. Тебе нужно понять все профессиональные навыки собеседника, относящиеся к вакансии по сценарию. Также оцени как коммуницирует собеседник. В конце встречи ты должна оценить его soft-skills. Старайся поддерживать беседу корректными, актуальными вопросами, развивая и углубляясь в предмет собеседования, но не слишком затягивать его. Сразу задай первый вопрос: {q_text}. Затем вызови tool `question_asked` с index=1."
             if q_text else
-            f"{greet}! Ты HR-интервьюер. Сразу задай первый вопрос: Расскажите, пожалуйста, о себе. Затем вызови tool `question_asked` с index=1."
+            f"{greet}! Ты HR-интервьюер.Твоя задача - задать все вопросы сценария собеседнику, обязательно выслушать его ответы до конца.  НЕ ОТВЛЕКАЙСЯ НА СТОРОННИЕ ТЕМЫ В БЕСЕДЕ, СФОКУСИРУЙСЯ НА ИНТЕРВЬЮ О КОНКРЕТНОЙ. Ты должна задавать чаще вопрос - а не говорить самой. Тебе нужно понять все профессиональные навыки собеседника, относящиеся к вакансии по сценарию. Также оцени как коммуницирует собеседник. В конце встречи ты должна оценить его soft-skills. Старайся поддерживать беседу корректными, актуальными вопросами, развивая и углубляясь в предмет собеседования, но не слишком затягивать его. Затем вызови tool `question_asked` с index=1."
         )
         en_instr = (
             f"{greet}! You are the HR interviewer. Immediately ask the first question: {q_text}. Then call tool `question_asked` with index=1."
@@ -307,9 +316,60 @@ async def proxy_client_to_openai(
     try:
         while True:
             data = await client_ws.receive_json()
-            
+
             # Логируем для отладки
             logger.debug(f"Client -> OpenAI: {data.get('type')}")
+
+            etype = data.get("type")
+            # Фиксация языка пайплайна от клиента и обновление сессии OpenAI
+            if etype == "session.update_lang":
+                lang_raw = (data.get("lang") or "").lower()
+                lang = "ru" if lang_raw.startswith("ru") else ("en" if lang_raw.startswith("en") else "en")
+                session.context["lang"] = lang
+                session.lang = lang
+                voice = "verse" if lang == "ru" else "alloy"
+                session_update = {
+                    "type": "session.update",
+                    "session": {
+                        "voice": voice,
+                        "input_audio_transcription": {
+                            "model": "gpt-4o-mini-transcribe",
+                            "language": ("ru" if lang == "ru" else "en")
+                        }
+                    }
+                }
+                await openai_ws.send(json.dumps(session_update))
+                # Сообщаем клиенту, что язык обновлён
+                await client_ws.send_json({"type": "session.lang.locked", "lang": lang})
+                continue
+
+
+            # Полудуплексная защита на сервере: когда ассистент говорит — не принимаем микрофонный апстрим
+            if etype == "input_audio_buffer.append" and session.assistant_speaking:
+                continue
+
+            # При явной отмене со стороны клиента сбрасываем флаги
+            if etype == "response.cancel":
+                try:
+                    await openai_ws.send(json.dumps({"type": "response.cancel"}))
+                finally:
+                    session.assistant_speaking = False
+                    session.active_response_id = None
+                continue
+
+            # Гарантия одного активного ответа: перед новым response.create отменяем предыдущий
+            if etype == "response.create" and session.active_response_id:
+                try:
+                    await openai_ws.send(json.dumps({"type": "response.cancel"}))
+                except Exception:
+                    logger.debug("response.cancel before create failed (ignored)")
+
+            # Обрабатываем stt.user_final для трекинга времени речи
+            if etype == "stt.user_final":
+                ms = data.get("ms", 0)
+                if ms > 0:
+                    session.user_speaking_ms += ms
+                continue
             
             # Отправляем в OpenAI
             await openai_ws.send(json.dumps(data))
@@ -333,9 +393,18 @@ async def proxy_openai_to_client(
             # Логируем для отладки
             logger.debug(f"OpenAI -> Client: {data.get('type')}")
 
-            # Сбрасываем флаг прогресса при начале нового ответа
+            # Начало нового ответа: фиксируем активный ответ и флаги
             if data.get("type") == "response.created":
-                session.context["question_marked"] = False
+                session.question_marked = False
+                response_obj = data.get("response") or {}
+                session.active_response_id = response_obj.get("id") or data.get("response_id")
+                session.assistant_speaking = True
+                # Отправляем клиенту с response_id
+                await client_ws.send_json({
+                    "type": "response.created",
+                    "response": response_obj
+                })
+                continue
 
             # Обрабатываем специальные события
             if data.get("type") == "response.function_call":
@@ -353,11 +422,15 @@ async def proxy_openai_to_client(
                 }))
                 
                 # Если интервью завершено, отправляем событие клиенту
-                if function_name == "end_interview":
+                if function_name == "end_interview" and result.get("status") == "success":
+                    # Финальный скоринг
+                    final_results = await score_and_finalize(session)
+                    
+                    # Отправляем событие завершения с redirect_url
                     await client_ws.send_json({
                         "type": "interview.completed",
-                        "overall_score": result.get("overall_score", 0),
-                        "passed": result.get("passed", False)
+                        "decision": final_results["decision"],
+                        "redirect_url": final_results["redirect_url"]
                     })
             
             # Сохраняем элементы разговора
@@ -374,23 +447,42 @@ async def proxy_openai_to_client(
                 except Exception:
                     args = {}
                 if fn == "question_asked":
-                    if session.context.get("question_marked"):
-                        # игнорируем повторные вызовы в рамках текущего ответа
+                    if session.question_marked:
                         pass
                     else:
-                        session.context["question_marked"] = True
-                        # Не доверяем индексу из модели: продвигаем строго на +1
-                        idx = session.current_question + 1
-                        idx = max(1, min(idx, session.total_questions))
-                        if idx > session.current_question:
-                            session.current_question = idx
-                            await client_ws.send_json({
-                                "type": "progress.update",
-                                "current": session.current_question,
-                                "total": session.total_questions
-                            })
+                        session.question_marked = True
+                        # Определяем является ли вопрос первичным
+                        question_idx = args.get("index", session.current_question + 1)
+                        is_primary = args.get("is_primary", True)
+                        
+                        # Проверяем компетенцию из сценария
+                        if not args.get("is_primary") and hasattr(session, "scenario") and session.scenario:
+                            try:
+                                q_data = session.scenario[question_idx - 1] if question_idx <= len(session.scenario) else None
+                                if q_data and isinstance(q_data, dict):
+                                    competence = q_data.get("competence", "")
+                                    is_primary = competence not in ["intro", "final"]
+                            except:
+                                pass
+                        
+                        if is_primary:
+                            session.answered_primary += 1
+                            idx = session.current_question + 1
+                            idx = max(1, min(idx, session.total_questions))
+                            if idx > session.current_question:
+                                session.current_question = idx
+                                await client_ws.send_json({
+                                    "type": "progress.update",
+                                    "current": session.current_question,
+                                    "total": session.total_questions
+                                })
                         # Авто‑финиш: если достигли лимита — заставляем модель вызвать end_interview
-                        if session.current_question >= session.total_questions and not session.context.get("interview_completed"):
+                        if (
+                            session.current_question >= session.total_questions
+                            and not session.context.get("interview_completed")
+                            and session.answered_primary >= session.min_primary_required
+                            and session.user_speaking_ms >= session.min_dialog_ms
+                        ):
                             await openai_ws.send(json.dumps({
                                 "type": "response.create",
                                 "response": {
@@ -404,6 +496,29 @@ async def proxy_openai_to_client(
 
             # Фолбэк удалён: прогресс обновляется только при вызове question_asked
 
+            # Фильтрация аудио-дельт по активному ответу, если Realtime шлёт идентификаторы
+            if data.get("type") == "response.audio.delta":
+                resp = data.get("response") or {}
+                resp_id = resp.get("id") or data.get("response_id")
+                active_id = session.active_response_id
+                if active_id and resp_id and resp_id != active_id:
+                    continue
+                # Добавляем response_id к данным для клиента
+                data["response_id"] = resp_id or active_id
+
+            # Конец ответа - сбрасываем флаги
+            if data.get("type") in ("response.audio.done", "response.done"):
+                session.assistant_speaking = False
+                session.active_response_id = None
+            
+            # STT от пользователя - трекаем время
+            if data.get("type") == "conversation.item.input_audio_transcription.completed":
+                # Примерная оценка длительности по транскрипту
+                transcript = data.get("transcript", "")
+                words = len(transcript.split())
+                # ~150 слов в минуту средняя скорость речи
+                session.user_speaking_ms += int((words / 150) * 60 * 1000)
+            
             # Пересылаем клиенту
             await client_ws.send_json(data)
             

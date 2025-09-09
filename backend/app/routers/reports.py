@@ -145,3 +145,11 @@ def download_report(report_id: str):
     raise HTTPException(status_code=404, detail="report not found")
 
 
+# Simple finish endpoint to be called by frontend tool
+@router.post("/finish")
+def finish_interview(interview_id: str | int) -> Dict[str, Any]:
+    # Placeholder: hook scoring/summary generation here if needed
+    # For now, just return redirect URL
+    return {"status": "ok", "redirect_url": f"/complete.html?id={interview_id}"}
+
+

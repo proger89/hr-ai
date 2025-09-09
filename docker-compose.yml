@@ -18,6 +18,12 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_HOST=http://ollama:11434
       - OLLAMA_MODEL=qwen2.5:7b-instruct-q5_K_M
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - REALTIME_MODEL=${REALTIME_MODEL}
+      - REALTIME_VOICE=${OPENAI_VOICE}
+      - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL}
+      - REALTIME_TURN_SILENCE_MS=500
+      - APP_BASE_URL=http://backend:8000
     ports:
       - "8001:8000"
     volumes:

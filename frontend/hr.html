@@ -560,7 +560,13 @@
           const qs = vacFilter? ('?vacancy_id='+encodeURIComponent(vacFilter)) : '';
           const r = await fetch('/api/candidates'+qs); const d = await r.json();
           candT.innerHTML='';
-          (d.items||[]).forEach(c=>{
+          const MATCH_THRESHOLD = 0.6; // 60% порог прохождения матчинга
+          const items = (d.items||[]).slice().sort((a,b)=>{
+            const am = (typeof a.match_pct === 'number') ? a.match_pct : -1;
+            const bm = (typeof b.match_pct === 'number') ? b.match_pct : -1;
+            return bm - am; // по убыванию соответствия
+          });
+          items.forEach(c=>{
             const pml = c.pml_url || `/i/CV/start?cid=${encodeURIComponent(c.id)}`; // персональная ссылка, если уже создана
             const actions = `<div class="btn-group" role="group">
                 <a class="btn btn-primary btnView" data-id="${c.id}" href="#">Просмотр</a>
@@ -568,7 +574,10 @@
               </div>`;
             const tr = document.createElement('tr'); tr.setAttribute('data-cid', String(c.id)); tr.setAttribute('data-status', c.status||'ready');
             const fileBtn = `<a class=\"btn btn-outline-secondary btn-sm\" href=\"/api/upload/cv/file/${encodeURIComponent(c.id)}\" target=\"_blank\">Скачать</a>`;
-            const linkHtml = `<span class="small" style="word-break:break-all">${pml}</span> <button class="btn btn-sm btn-outline-secondary btnCopy" data-link="${pml}">Копировать</button>`;
+            const passMatch = (typeof c.match_pct === 'number') && (c.match_pct >= MATCH_THRESHOLD);
+            const linkHtml = passMatch
+              ? `<span class="small" style="word-break:break-all">${pml}</span> <button class="btn btn-sm btn-outline-secondary btnCopy" data-link="${pml}">Копировать</button>`
+              : `<span class="text-muted small">—</span>`;
             const vacTitle = c.vacancy_title || (c.vacancy_id? ('#'+c.vacancy_id) : '—');
             const matchPct = (c.status==='processing')? 'в обработке' : ((typeof c.match_pct==='number')? Math.round(c.match_pct*100)+'%' : '—');
             const disabled = (c.status==='processing');

@@ -325,12 +325,15 @@
       let isPlaying = false;
       let assistantSpeaking = false;
       let micUpstreamEnabled = true;
+      let activeResponseId = null;
       let vadHot = 0;
       const VAD_THRESH = 0.02; // эмпирический порог для RMS
       const VAD_FRAMES = 3;    // ~3*2048/48k ≈ 120–130 мс
       let kickoffSent = false;
       let kickoffTimer = null;
       let lang = 'ru';
+      let speechStartTime = null;
+      let totalSpeechMs = 0;
 
       function getGreeting(language) {
         const h = new Date().getHours();
@@ -359,9 +362,23 @@
           if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
           if (audioContext.state !== 'running') await audioContext.resume();
           
-          // Запрашиваем доступ к микрофону с улучшениями качества (EC/NS/AGC)
+          // Выбор устройства микрофона (если доступно) и улучшенные констрейнты
+          let deviceId = localStorage.getItem('preferredMicId') || '';
+          try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const mics = devices.filter(d => d.kind === 'audioinput');
+            if (mics.length && !deviceId) {
+              deviceId = mics[0].deviceId;
+            }
+          } catch (e) { /* ignore */ }
           mediaStream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }
+            audio: {
+              deviceId: deviceId ? { exact: deviceId } : undefined,
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              channelCount: 1
+            }
           });
           
           // Подключаемся к WebSocket
@@ -375,6 +392,9 @@
             console.log('WebSocket connected');
             setConnectionStatus('connected', lang === 'ru' ? 'Подключено' : 'Connected');
             statusText.textContent = lang === 'ru' ? 'Готов к интервью' : 'Ready for interview';
+            
+            // Отправляем язык сессии на сервер
+            sendClientEvent({type: 'session.update_lang', lang: lang});
 
             // Начинаем захват аудио
             startAudioCapture();
@@ -430,8 +450,9 @@
           case 'input_audio_buffer.speech_started':
             isListening = true;
             micIndicator.classList.add('active');
+            speechStartTime = Date.now();
             // barge-in: при начале речи пользователя отменяем ответ ИИ
-            if (isPlaying) {
+            if (assistantSpeaking || isPlaying) {
               sendClientEvent({ type: 'response.cancel' });
               audioQueue = [];
               if (currentSource) {
@@ -439,6 +460,8 @@
                 currentSource = null;
               }
               isPlaying = false;
+              assistantSpeaking = false;
+              micUpstreamEnabled = true;
               setWaveLevel(0);
             }
             break;
@@ -446,20 +469,33 @@
           case 'input_audio_buffer.speech_stopped':
             isListening = false;
             micIndicator.classList.remove('active');
-            // После окончания речи инициируем обработку и запрашиваем ответ модели
-            sendClientEvent({ type: 'input_audio_buffer.commit' });
-            const followInstr = lang === 'ru'
-              ? 'Ты HR-интервьюер. Оцени ответ кандидата (вызови tool `evaluate_answer`), затем задай следующий вопрос по сценарию и вызови tool `question_asked` с номером вопроса.'
-              : 'You are the HR interviewer. Evaluate the candidate\'s answer (call tool `evaluate_answer`), then ask the next scenario question and call tool `question_asked` with the question number.';
-            sendClientEvent({
-              type: 'response.create',
-              response: { modalities: ['audio','text'], instructions: followInstr }
-            });
+            // Отправляем время речи на сервер
+            if (speechStartTime) {
+              const speechDuration = Date.now() - speechStartTime;
+              totalSpeechMs += speechDuration;
+              sendClientEvent({ 
+                type: 'stt.user_final', 
+                ms: speechDuration 
+              });
+              speechStartTime = null;
+            }
+            // Server VAD автоматически создаёт response при завершении речи
             break;
             
+          case 'response.created':
+            // Начался новый ответ — очищаем очередь и гасим предыдущий плейбек
+            audioQueue = [];
+            if (currentSource) { try { currentSource.stop(); } catch (e) {} currentSource = null; }
+            isPlaying = false;
+            assistantSpeaking = true;
+            micUpstreamEnabled = false;
+            activeResponseId = event.response?.id || null;
+            break;
           case 'response.audio.delta':
             // Получаем аудио чанк
             if (event.delta) {
+              // Фильтруем дельты по response_id
+              if (activeResponseId && event.response_id && event.response_id !== activeResponseId) return;
               if (!isPlaying) { assistantSpeaking = true; micUpstreamEnabled = false; }
               queueAudioChunk(event.delta);
             }
@@ -481,7 +517,9 @@
             setWaveLevel(0);
             // Сбрасываем статус
             statusText.textContent = 'Готов к интервью';
-            assistantSpeaking = false; micUpstreamEnabled = true;
+            assistantSpeaking = false;
+            micUpstreamEnabled = true;
+            activeResponseId = null;
             window.currentAIResponse = '';
             break;
             
@@ -489,18 +527,31 @@
             // Ответ полностью завершен
             // console.log('Response completed');
             statusText.textContent = 'Готов к интервью';
-            assistantSpeaking = false; micUpstreamEnabled = true;
+            assistantSpeaking = false;
+            micUpstreamEnabled = true;
+            activeResponseId = null;
             break;
             
           case 'progress.update':
             // Обновляем прогресс
             currentQuestion = event.current;
-            updateProgress();
+            const pct = Math.round(100 * currentQuestion / Math.max(1, totalQuestions));
+            progressBar.style.width = pct + '%';
+            progressText.textContent = `${currentQuestion} из ${totalQuestions} вопросов`;
             break;
             
           case 'interview.completed':
             // Интервью завершено
-            finishInterview(event.overall_score, event.passed);
+            if (event.redirect_url) {
+              // Переходим на страницу результатов
+              statusText.textContent = 'Завершение интервью...';
+              setTimeout(() => {
+                location.replace(event.redirect_url);
+              }, 1000);
+            } else {
+              // Fallback на старую логику
+              finishInterview(event.overall_score || 0, event.passed || false);
+            }
             break;
             
           case 'error':
@@ -549,13 +600,14 @@
               vadHot = 0;
             }
           }
-          // Полудуплекс: если ассистент говорит — не отправляем аудио в сеть
-          if (!micUpstreamEnabled) return;
-          if (rms > 0.01) {
-            micIndicator.classList.add('active');
-          } else if (!isListening) {
-            micIndicator.classList.remove('active');
-          }
+            // Полудуплекс: если ассистент говорит — не отправляем аудио в сеть
+            if (!micUpstreamEnabled) return;
+            
+            if (rms > 0.01) {
+              micIndicator.classList.add('active');
+            } else if (!isListening) {
+              micIndicator.classList.remove('active');
+            }
 
           const ds = downsampleFloat32(inputData, audioContext.sampleRate, 24000);
           const pcm16 = floatTo16BitPCM(ds);
@@ -624,6 +676,7 @@
           isPlaying = false;
           setWaveLevel(0);
           currentSource = null;
+          activeResponseId = null;
           return;
         }
 

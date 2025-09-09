@@ -30,3 +30,7 @@ prometheus-client==0.20.0
 openai>=1.58.0
 websockets>=12.0
 
+# Additional for Voice Agents
+httpx==0.27.2
+python-dotenv==1.0.1
+

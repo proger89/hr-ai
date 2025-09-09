@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>AI HR — Voice Interview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; }
+    .progress { height: 8px; background: #eee; border-radius: 6px; overflow: hidden; margin: 12px 0 8px; }
+    .bar { height: 100%; width: 0%; background: #21a366; transition: width .25s; }
+    .mic { width: 14px; height: 14px; border-radius: 50%; display: inline-block; margin-left: 6px; background: #ccc; vertical-align: middle; }
+    .mic.on { background: #d90000; }
+    .log { white-space: pre-wrap; background:#fafafa; border:1px solid #eee; padding:8px; border-radius:6px; height: 180px; overflow:auto;}
+  </style>
+  <script type="module">
+    import { RealtimeAgent, RealtimeSession, tool } from 'https://cdn.jsdelivr.net/npm/@openai/agents-realtime@latest/dist/index.min.js';
+    import { z } from 'https://cdn.jsdelivr.net/npm/zod@3/dist/index.min.js';
+
+    const $log = () => document.getElementById('log');
+    const $bar = () => document.getElementById('bar');
+    const $mic = () => document.getElementById('mic');
+    const $q   = () => document.getElementById('q');
+
+    const qs = new URLSearchParams(location.search);
+    const vacancy_id  = Number(qs.get('vacancy_id') || 1);
+    const interview_id= Number(qs.get('interview_id') || 0);
+    const lang = (qs.get('lang') || 'ru').toLowerCase();
+
+    function log(s){ const n=$log(); n.textContent += s + "\n"; n.scrollTop = n.scrollHeight; }
+
+    const state = { totalSteps: 6, asked: 0, awaitingAnswer: false, firstKickoffDone: false };
+
+    const questionAsked = tool({
+      name: 'question_asked',
+      description: 'Increment local progress when a question is SPOKEN.',
+      parameters: z.object({
+        section: z.enum(['intro','experience','stack','cases','communication','final']),
+        text: z.string()
+      }),
+      async execute({ section, text }) {
+        if (!state.awaitingAnswer) {
+          state.awaitingAnswer = true;
+          state.asked = Math.min(state.asked + 1, state.totalSteps);
+          $bar().style.width = Math.round(100 * state.asked / state.totalSteps) + '%';
+          $q().textContent = `Вопросы: ${state.asked}/${state.totalSteps}`;
+          log(`ИИ: ${text}`);
+        }
+        return 'ok';
+      }
+    });
+
+    const finishInterview = tool({
+      name: 'finish_interview',
+      description: 'Finish and redirect to result screen.',
+      parameters: z.object({}).optional(),
+      async execute() {
+        try { await fetch(`/api/report/finish?interview_id=${interview_id}`, { method:'POST' }); } catch {}
+        location.href = `/complete.html?id=${interview_id}`;
+        return 'ok';
+      }
+    });
+
+    const agent = new RealtimeAgent({
+      name: 'HR Agent',
+      instructions: `
+Говори только на ${lang === 'ru' ? 'русском' : 'английском'}.
+Строго один вопрос за раз. После вопроса молчи и жди ответа.
+Без коучинга и долгих монологов, только интервью по сценарию.`,
+      tools: [questionAsked, finishInterview]
+    });
+
+    const session = new RealtimeSession(agent, {
+      model: 'gpt-realtime',
+      config: {
+        turnDetection: { type: 'semantic_vad', eagerness: 'low', createResponse: true, interruptResponse: true },
+        inputAudioTranscription: { model: 'gpt-4o-mini-transcribe' }
+      }
+    });
+
+    session.on('transport_event', (ev) => {
+      if (ev?.type === 'webrtc_state' && ev.micActive !== undefined) {
+        $mic().classList.toggle('on', !!ev.micActive);
+      }
+    });
+
+    async function connectAndStart() {
+      log('Запрос токена…');
+      const r = await fetch(`/api/voice/mint?vacancy_id=${vacancy_id}&interview_id=${interview_id}&lang=${lang}`);
+      if (!r.ok) { throw new Error('mint failed: ' + r.status); }
+      const mint = await r.json();
+      log('Токен получен. Подключение WebRTC…');
+      await session.connect({ apiKey: mint.client_secret.value });
+      if (!state.firstKickoffDone) {
+        state.firstKickoffDone = true;
+        await session.sendMessage(
+          lang === 'ru' ? 'Начни интервью с шага intro, задай первый вопрос и жди ответ.'
+                        : 'Start the interview with the intro step, ask the first question and wait.'
+        );
+      }
+    }
+
+    connectAndStart().catch(e => log('Ошибка соединения: ' + (e?.message || e)));
+  </script>
+</head>
+<body>
+  <h2>Голосовое интервью</h2>
+  <div>Микрофон: <span id="mic" class="mic"></span></div>
+  <div class="progress"><div id="bar" class="bar"></div></div>
+  <div id="q">Вопросы: 0/6</div>
+  <div class="log" id="log"></div>
+</body>
+</html>
+
+
